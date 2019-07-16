@@ -1,0 +1,12 @@
+/.vs
+/Debug
+/Release
+/builds
+/snips
+/screenshots
+/perfshots
+/enc_temp_folder
+/debug_shaders
+/*.VC.*
+/*.bin
+gl_info.txt
