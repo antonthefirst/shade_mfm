@@ -1,0 +1,58 @@
+types can be either Simple (Cat) or Compound (Animal)
+only Simple types can be instantiated. fundamentally simple types are the only "grounded" type that is actually written into the "type bits" of an atom
+Compound types live only in "the world of forms" (simple types also live there, as well as being grounded).
+Compound types exist purely as shorthand and organization for Simple types
+
+element Cat { } // Simple type definition
+
+Cat isa Feline // Feline 'set' created 'on first reference' and now contains Cat
+element Cat isa Feline { } // shorthand for the two above
+
+// instantiation
+ew(0, new(Cat));    // ok
+ew(0, new(Feline)); // Violation (or more amusingly, a random memeber of set Feline?)
+
+Puma isa Feline // append Puma to Feline set
+
+Puma and Cat are Feline// shorthand for the above
+
+// x is an atom pulled from a site
+
+if (x isa Feline) // shorthand for (x isa Cat) || (x isa Puma)
+
+Feline isa Animal // append entire Feline set to Animal set. flatly! no hierarchy.
+
+if (x isa Animal) // linear check through all members of Animal (not walking a hierarchy)
+
+// sets can overlap arbitrarily
+
+Feline isa Mammal
+Feline isa Quadraped
+Lizard isa Quadraped
+
+// Traits are capabilities of Simple atoms. they are not declared 
+
+if (x can Purr) // true for Cat, true for Puma
+if (x can Purr like Cat) // true for Cat, false for Puma, shorthand for (x isa Cat) && (x can Purr)
+
+// Purr has a dispatch table, that contains entries for Cat (as Cat_Purr()) and Puma (as Puma_Purr()). default entry (if type can't purr) is a Violation.
+
+Purr(x); // if called on an atom that cannot Purr, this hits the 'default' switch entry, and causes a Violation bit to be set (deleting the site, perhaps)
+
+// so it's the functions that have dispatch tables back to "specific versions of that trait" rather than the types holding their available functions
+// this means any function can be called on any atom, and will either succeed or cause Violation
+
+element Dog isa Canine { }
+element Fox isa Canine { }
+element Wolf isa Canine { }
+
+// assuming everyone has trait Jump
+if (x can Jump)             // shorthand for (x isa Dog || x isa Wolf || x isa Fox || x isa Cat || ax isa Puma)
+if (x can Jump like Canine) // shorthand for (x isa Dog || x isa Wolf || x isa Fox) && (x can Jump), or (x isa Canine) && (x can Jump)
+
+// in the above case, we know that all Canine can jump, so it could be reduced to just a check for isa Canine (but let the boolean reducer in compiler handle that)
+// what happens when some members of Canine have a trait but others don't?
+
+if (x can Fetch) // true for Dog, false for Wolf, false for Fox, false for all Felines
+if (x can Fetch like Canine) // shorthand for (x isa Dog) && (x can Fetch). picks out the elements of the set that are known to Fetch only, and tests for trait
+if (x can Fetch like Feline) // always false (nothing in Feline can fetch), so just generates false
