@@ -85,6 +85,7 @@ static int overview_state = 0;
 static float overview_transition_timer = -1.0f;
 static float AER_history[30];
 static u32 AER_history_idx = 0;
+static bool doing_indirect = false;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -312,7 +313,10 @@ static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 	update_timer.start("batch");
 	gtimer_start("update");
 
-#if 1
+	// something here is non-deterministic. appears to be prng related (prng state is different even in areas that never had atoms), but hard to know. 
+	// it appears to be due to atomics inside the isActiveMem branch, at least that's the only wrong thing i can spot
+	// the vote map gets trashed, because the rng written back appears to be nondeterministic. the "roll random numbers based on random numbers" test inside works for direct update correctly, so i suspect it's that feeding into voting that's the issue (the random re-rolls are just an accelerator of it)
+#if 0 
 	if (useProgram("shaders/staged_update_indirect.comp")) {
 		int event_job_handle = event_job_handles[event_job_write_idx];
 		int command_handle = command_handles[event_job_write_idx];
@@ -351,6 +355,7 @@ static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 			dispatch_counter++;
 		}
 	}
+	doing_indirect = true;
 #else
 	if (useProgram("shaders/staged_update_direct.comp")) {
 		int event_job_handle = event_job_handles[event_job_write_idx];
@@ -376,6 +381,7 @@ static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 			dispatch_counter++;
 		}
 	}
+	doing_indirect = false;
 #endif
 	update_timer.stop();
 	gtimer_stop();
@@ -739,6 +745,10 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		gui::Text("Time:               %3.1f sec", sim_time_since_reset);
 	} gui::End(); 
 
+	if (gui::Begin("DEBUG")) {
+		gui::Text(doing_indirect ? "Indirect" : "Direct");
+	} gui::End();
+
 	if (gui::Begin("Site Inspector")) {
 		static int inspect_mode = INSPECT_MODE_BASIC;
 		gui::RadioButton("basic", &inspect_mode, INSPECT_MODE_BASIC); gui::SameLine();
@@ -757,7 +767,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	initStatsIfNeeded();
 	bool file_change = false;
 	bool project_change = false;
-	checkForAtomProgramChanges(&file_change, &project_change);
+	//checkForAtomProgramChanges(&file_change, &project_change);
 	checkForSplatProgramChanges(&file_change, &project_change);
 	do_reset |= project_change;
 

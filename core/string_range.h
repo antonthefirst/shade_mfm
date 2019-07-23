@@ -1,5 +1,6 @@
 #pragma once
 #include "basic_types.h"
+#include "core/log.h" // for assert
 #include <stdlib.h> // for realloc
 #include <string.h> // for strlen
 
@@ -50,6 +51,10 @@ struct String {
 	char* str = 0;
 	size_t len = 0;
 	size_t max_bytes = 0;
+	inline void free() {
+		::free(str);
+		len = max_bytes = 0;
+	}
 	inline bool empty() const {
 		return str == 0 || len == 0;
 	}

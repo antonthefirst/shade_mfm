@@ -6,3 +6,6 @@ struct FileStats {
 };
 
 int fileStat(const char* filename, FileStats* stats);
+
+char* fileReadBinaryIntoMem(const char* pathfile, size_t* bytesize = 0); 
+char* fileReadCStringIntoMem(const char* pathfile, size_t* bytesize = 0); 

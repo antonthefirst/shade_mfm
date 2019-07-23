@@ -96,7 +96,7 @@ void checkForSplatProgramChanges(bool* file_change, bool* project_change) {
 	gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Code")) {
 		if (gui::Button("dump compiled code")) {
-			FILE* f = fopen("code.txt", "wb");
+			FILE* f = fopen("debug_shaders/code.txt", "wb");
 			if (f) {
 				fwrite(emi_decl.code.str, emi_decl.code.len, 1, f);
 				fwrite(emi_elem.code.str, emi_elem.code.len, 1, f);

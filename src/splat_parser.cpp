@@ -644,7 +644,7 @@ inline bool isSectionDepthValid(Node* who) {
 		return who->int_val == 2;
 	}
 }
-void transformOne(Node* par, Node* who, Errors* err) {
+void transformAST(Node* par, Node* who, Errors* err) {
 	if (isSectionHeaderNode(who)) {
 		if (!isSectionDepthValid(who)) {
 			ParserError& e = err->errors.push();
@@ -673,30 +673,10 @@ void transformOne(Node* par, Node* who, Errors* err) {
 			}
 		}
 	}
-	if (who->kid) transformOne(who, who->kid, err);
-	if (who->sib) transformOne(par, who->sib, err);
+	if (who->kid) transformAST(who, who->kid, err);
+	if (who->sib) transformAST(par, who->sib, err);
 }
 
-void compile(const char* code_start, const char* code_end, Emitter* emi, Errors* err) {
-	Lexer lex = Lexer(code_start, code_end);
-
-	Token tok;
-	tok.str = "root";
-	tok.len = strlen(tok.str);
-	tok.type = Token_unknown;
-
-	Parser par;
-	Node* root = makeNode(Node_braces, tok);
-	while (Node* block = parseGroups(&par, &lex, err))
-		addKid(root, block);
-	
-	if (root->kid)
-		transformOne(root, root->kid, err);
-	printNode(root);
-
-	emit(emi, root, err);
-	freeNode(root);
-}
 
 
 #if 0

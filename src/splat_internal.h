@@ -306,6 +306,10 @@ inline bool isSectionHeaderNode(Node* who) {
 
 Node* makeNode(NodeType, Token);
 void freeNode(Node* who);
+void addKid(Node* par, Node* kid);
+void transformAST(Node* par, Node* who, Errors* err);
+
+Node* parseGroups(Parser* par, Lexer* lex, Errors* err);
 
 
 ////////////////////////////////////////////////
@@ -339,6 +343,7 @@ struct Emitter {
 	String code;
 };
 
-void emit(Emitter* emi, Node* who, Errors* err);
+void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err);
+void emitElements(Emitter* emi, Node* who, Errors* err);
 
 void compile(const char* code_start, const char* code_end, Emitter* emi, Errors* err);

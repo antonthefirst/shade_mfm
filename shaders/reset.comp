@@ -1,0 +1,47 @@
+//include "cpu_gpu_shared.inl"
+//include "uniforms.inl"
+//include "defines.inl"
+//include "globals.inl"
+//include "prng.inl"
+//include "atom_decls.inl"
+//include "bit_packing.inl"
+//include "sites.inl"
+//include "atoms.inl"
+//include "splitmix32.inl"
+//include "xoroshiro128starstar.inl"
+
+void main() {
+	ivec2 prng_idx = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 world_size = imageSize(img_site_bits);
+	ivec2 prng_size = imageSize(img_prng_state);
+	if (prng_idx.x < prng_size.x && prng_idx.y < prng_size.y) {
+		// seed the prng state
+		uint state = prng_idx.x + prng_idx.y * prng_size.x;
+		uint smix = SplitMix32(state);
+		_XORO[0] = SplitMix32(state);
+		_XORO[1] = SplitMix32(state);
+		_XORO[2] = SplitMix32(state);
+		_XORO[3] = SplitMix32(state);
+		// crank it a bit just in case to decorrelate
+		for (int i = 0; i < 128; ++i)
+			XoroshiroNext32();
+		
+
+		if (prng_idx.x >= EVENT_WINDOW_RADIUS && prng_idx.y >= EVENT_WINDOW_RADIUS &&
+		    prng_idx.x < (prng_size.x - EVENT_WINDOW_RADIUS) && prng_idx.y < (prng_size.y - EVENT_WINDOW_RADIUS)) {
+			
+			ivec2 site_idx = prng_idx - ivec2(EVENT_WINDOW_RADIUS);
+			_SITE_IDX = site_idx;
+			_SYMMETRY = cSYMMETRY_000L;
+			uint tick_counter = dispatch_counter;
+
+			ew(0, new(Empty));
+			Init(site_idx.x, site_idx.y, world_size.x, world_size.y);
+
+			imageStore(img_event_count, site_idx, uvec4(0));
+			imageStore(img_dev, site_idx, uvec4(uint(smix&0xffffffff), uint((smix>>32)&0xffffffff), 0, 0));
+		}
+
+		imageStore(img_prng_state, prng_idx, xoroshiro128_pack(_XORO));
+	}
+}

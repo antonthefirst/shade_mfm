@@ -1,0 +1,52 @@
+//include "cpu_gpu_shared.inl"
+//include "uniforms.inl"
+//include "defines.inl"
+//include "globals.inl"
+//include "prng.inl"
+//include "atom_decls.inl"
+//include "bit_packing.inl"
+//include "sites.inl"
+//include "atoms.inl"
+//include "xoroshiro128starstar.inl"
+
+void main() {
+
+	uvec2 size = imageSize(img_site_bits);
+	ivec2 center_idx = ivec2(gl_GlobalInvocationID.xy);
+
+	// threads may be scheduled "off the image" because they come in blocks, so make sure our thread is actually on top of a valid site
+	if (center_idx.x < size.x && center_idx.y < size.y) { 
+
+		// rendering does not support rng, reading from any site other than 0, and hence doesn't require symmetry randomization
+		_SITE_IDX = center_idx;
+		_SYMMETRY = cSYMMETRY_000L;
+		
+		ARGB argb = _COLOR_DISPATCH(_UNPACK_TYPE(imageLoad(img_site_bits, center_idx)));
+
+		vec4 col = vec4(argb.yzwx) / 255.0;
+#if 0
+		uvec4 R = imageLoad(img_prng_state, center_idx);
+		col = mix(col, vec4(vec3(float((R.w>>0)&0xff)/255.0), 1.0), 0.5);
+#endif
+#if 0
+		uint event_count = imageLoad(img_event_count, center_idx).x;
+		col = mix(col, vec4(vec3(float(event_count) / 40.0), 1.0), 0.5);;
+#endif
+
+#if 0
+		uint event_count = imageLoad(img_event_count, center_idx).x;
+		col = vec4(vec3(float(event_count) / 100.0), 1.0);
+#endif
+#if 0
+		uvec4 R = imageLoad(img_prng_state, center_idx);
+		col = vec4(vec3(float((R.w>>0)&0xff)/255.0), 1.0);
+#endif
+#if 0
+		uvec4 R = imageLoad(img_vote, center_idx);
+		col = vec4(vec3(float((R.x>>0)&0xff)/255.0), 1.0);
+#endif
+		if (center_idx.x == site_info_idx.x && center_idx.y == site_info_idx.y)
+			col = vec4(1.0);
+		imageStore(img_color, ivec2(center_idx.x, size.y - 1 - center_idx.y), col); //#Y-DOWN
+	}
+}
