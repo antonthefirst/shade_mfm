@@ -58,7 +58,7 @@ void printNode(Node* who, int depth) {
 	gui::Indent(gui::GetStyle().IndentSpacing * (depth+1));
 	gui::Text("Node: %s, Token: %s, %.*s", toStr(who->type), toStr(who->tok.type), who->tok.len, who->tok.str);
 	gui::Unindent(gui::GetStyle().IndentSpacing * (depth+1));
-	if (gui::IsItemHovered()) {
+	if (gui::IsItemHovered() && who->type == Node_diagram) {
 		gui::PushStyleColor(ImGuiCol_PopupBg, vec4(vec3(0.0f), 1.0f));
 		gui::BeginTooltip();
 		printDiagramImg(who);

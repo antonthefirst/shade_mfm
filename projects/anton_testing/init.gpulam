@@ -1,0 +1,49 @@
+void Init(Int x, Int y, Int w, Int h) {
+	Atom S = new(Empty);
+
+#if 0 // diffused mixed dreg and res
+	if (random_oneIn(100)) {
+		S = new(DReg);
+	} else if (random_oneIn(10)) {
+		S = new(Res);
+	}
+#endif
+#if 1 // diffused mixed dreg and res
+	if (random_oneIn(100)) {
+		S = new(Test);
+	} else if (random_oneIn(10)) {
+		S = new(Res);
+	}
+#endif
+#if 0 // center test
+	if (random_oneIn(10)) {
+		S = new(Res);
+	} 
+#endif
+#if 0 // center test
+	if (x == w/2 && y == h/2) {
+		S = new(ForkTest);
+	} 
+#endif
+#if 0 // center test
+	if (x == w/2 && y == h/2) {
+		S = new(Test);
+	}
+#endif
+#if 0
+	if (random_oneIn(10)) {
+		S = new(Memtest);
+	} else {
+		S = new(Res);
+	}
+#endif
+#if 0
+	if (x == w/2 && y == h/2) {
+		S = new(Symtest);
+	}	
+#endif
+#if 0
+	S = new(Edgetest);
+#endif
+	ew(0, S); 
+}

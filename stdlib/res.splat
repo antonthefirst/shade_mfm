@@ -1,0 +1,12 @@
+# Basic Res element
+
+=element Res
+\symbol R
+\color #0f0
+\symmetries all
+
+== Rules
+
+ @_ -> _@
+
+ @ -> @

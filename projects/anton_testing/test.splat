@@ -1,0 +1,12 @@
+# Simple testing element
+
+=element Test
+\symbol T
+\color #a80
+\symmetries all
+
+== Rules
+
+ @. -> .@
+
+ @ -> @

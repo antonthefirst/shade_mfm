@@ -125,6 +125,7 @@ int appInit(AppInit init)
 	//glClear(GL_DEPTH);   // make an error to test
 #endif
 
+	/*
 	FILE* f = fopen(GL_INFO_FILENAME, "w");
 	if (f) {
 		fprintf(f, "Vendor:   %s\n", glGetString(GL_VENDOR));
@@ -142,8 +143,11 @@ int appInit(AppInit init)
 	} else {
 		logError(SYS_GL, 0, "Unable to open file for writing info");
 	}
+	*/
+
+	/* There are no extensions to require right now...
 	logInfo(SYS_GL, "Checking required extensions...");
-	const char* required_extensions[] = { "GL_ARB_gpu_shader_int64" };
+	const char* required_extensions[] = { };
 	GLint extension_count = 0;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);
 	bool all_found = true;
@@ -161,8 +165,10 @@ int appInit(AppInit init)
 		}
 		all_found &= found;
 	}
-	if (!all_found)
+	if (!all_found) {
 		logError(SYS_GL, 0, "Not all extensions are available");
+	}
+	*/
 
 	return 0;
 }
