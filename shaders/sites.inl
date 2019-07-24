@@ -118,8 +118,7 @@ bool ew_isLive(SiteNum n) {
 	return ew_isLive(ew_mapSym(n));
 }
 bool ew_isEmpty(C2D c) {
-	AtomType t = _UNPACK_TYPE(_SITE_LOAD(c));
-	return t != Void && t == Empty;
+	return _UNPACK_TYPE(_SITE_LOAD(c)) == Empty;
 }
 bool ew_isEmpty(SiteNum n) {
 	return ew_isEmpty(ew_mapSym(n));

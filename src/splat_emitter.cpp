@@ -177,17 +177,16 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 			} else if (emi->given[i].isa.len) {
 				emitLine(emi, "return is(ew(_cursn), %.*s);", emi->given[i].isa.len, emi->given[i].isa.str);
 			} else if (i == '@') {
-				//emitLine(emi, "return is(ew(_cursn), %.*s);", emi->element_name.len, emi->element_name.str);
 				emitLine(emi, "return true;");
 			} else if (i == '_') {
-				emitLine(emi, "return is(ew(_cursn), Empty);");
+				emitLine(emi, "return ew_isEmpty(_cursn);");
 			} else if (i == '?') {
 				emitLine(emi, "return ew_isLive(_cursn) && !ew_isEmpty(_cursn);"); //#OPT could just be (t != Void && t != Empty)
 			} else if (i == '.') {
 				emitLine(emi, "return ew_isLive(_cursn);");
 			} else {
 				//assert(false);
-				emitLine(emi, "return true; // Default");
+				emitLine(emi, "return ew_isLive(_cursn); // Default");
 			}
 			emitUnindent(emi);
 			emitLine(emi, "}");
