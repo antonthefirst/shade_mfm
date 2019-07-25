@@ -1,0 +1,12 @@
+# A Fork Bomb that doesn't destroy
+
+=element FriendlyForkBomb
+\symbol FB
+\color #f00
+\symmetries all
+
+== Rules
+
+ @_ -> @@
+
+ @ -> @

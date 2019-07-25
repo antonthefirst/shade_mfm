@@ -153,8 +153,7 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 					char yc = v.y > 0 ? comp_img(v - ivec2(0,1)) : 0;
 					char dc = (v.x > 0 && v.y > 0) ? comp_img(v - ivec2(1,1)) : 0;
 					char rc = (v.x < (dims.x-1)  && v.y > 0) ? comp_img(v + ivec2(+1,-1)) : 0;
-					if (xc != 0 || yc != 0 || dc != 0 || rc != 0) {
-						
+					if (xc != 0 || yc != 0 || dc != 0 || rc != 0) {	
 						// min of non-zero values
 						char min_nonzero = min(yc != 0 ? yc : COMP_COUNT_MAX, dc != 0 ? dc : COMP_COUNT_MAX);
 						min_nonzero = min(min_nonzero, char(xc != 0 ? xc : COMP_COUNT_MAX)); 
@@ -165,19 +164,7 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 						if (yc != 0) comp_map[yc] = min_nonzero;
 						if (dc != 0) comp_map[dc] = min_nonzero;
 						if (rc != 0) comp_map[rc] = min_nonzero;
-					/*
-					if (xc != 0 && yc != 0) {
-						comp_img(v) = min(xc, yc);
-						if (xc != yc) {
-							comp_map[max(xc,yc)] = min(xc,yc); // map the larger value equivalent to lower value
-						}
-					} else if (xc != 0) {
-						comp_img(v) = xc;
-					} else if (yc != 0) {
-						comp_img(v) = yc;
-					} else if (dc != 0) {
-						comp_img(v) = dc;
-					*/
+
 					} else {
 						if (comp_count < COMP_COUNT_MAX) {
 							comp_img(v) = comp_count;

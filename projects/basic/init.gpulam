@@ -7,5 +7,8 @@ void Init(Int x, Int y, Int w, Int h) {
 		S = new(Res);
 	}
 
+	if (x == w/2 && y == h/2)
+		S = new(FriendlyForkBomb);
+
 	ew(0, S); 
 }
