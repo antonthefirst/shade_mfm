@@ -4,7 +4,10 @@ void Init(Int x, Int y, Int w, Int h) {
 	if (x%8==0 && y%8==0)
 		S = new(Wall);
 
-	if (x == 2)
+	if (x == 0)
+		S = new(SwapLine);
+
+	if (x == 4)
 		S = new(SwapLine);
 
 	ew(0, S); 
