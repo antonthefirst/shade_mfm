@@ -1,9 +1,10 @@
-# Basic Res element
+# Generic resource
 
 =element Res
 \symbol R
-\color #0f0
+\color #60662e
 \symmetries all
+\radius 1
 
 == Rules
 

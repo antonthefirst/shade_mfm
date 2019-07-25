@@ -1,8 +1,10 @@
 # Basic DReg element
 
 =element DReg
+\author Dave Ackley
 \symbol DR
-\color #ff0
+\color #033
+\radius 1
 \symmetries all
 
 == Rules

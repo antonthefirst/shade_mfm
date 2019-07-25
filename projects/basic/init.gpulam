@@ -10,5 +10,8 @@ void Init(Int x, Int y, Int w, Int h) {
 	if (x == w/2 && y == h/2)
 		S = new(FriendlyForkBomb);
 
+	//if (x == w/4 && y == h/4)
+	//	S = new(ForkBomb);
+
 	ew(0, S); 
 }

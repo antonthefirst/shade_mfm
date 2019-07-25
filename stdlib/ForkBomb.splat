@@ -1,0 +1,13 @@
+# A standard Fork Bomb
+
+=element ForkBomb
+\symbol FB
+\color #af0
+\symmetries all
+\author Dave Ackley
+
+== Rules
+
+ @. -> @@
+
+ @ -> @
