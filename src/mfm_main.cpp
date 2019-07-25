@@ -41,6 +41,7 @@ static int event_job_write_idx = 0;
 static int event_job_count_max = 0;
 static u32 dispatch_counter = 0;
 static bool reset_ok = false;
+static ProgramInfo prog_info;
 
 // stats state
 #define STATS_BUFFER_SIZE 2
@@ -674,14 +675,6 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 
 	int stop_at_n_dispatches = gui_set.enable_break_at_step ? gui_set.break_at_step_number : 0;
 
-	/*
-	gui::Begin("Statistics");
-	gui::Text("Atom Counts:");
-	//for (int i = 0; i < TYPE_COUNT; ++i)
-	//	gui::Text("%d: %d (%3.3f%%)", i, stats.counts[i], float(stats.counts[i]) / float(total_sites) * 100.0f); 
-	gui::End();
-	*/
-
 	if (gui::Begin("Performance")) {
 		float sec_per_dispatch = dispatch_count == 0 ? 0.0f : sec_per_batch / dispatch_count;
 		float events_per_sim_sec = stats.event_count_this_batch / sec_per_batch;
@@ -718,7 +711,8 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	initStatsIfNeeded();
 	bool file_change = false;
 	bool project_change = false;
-	checkForSplatProgramChanges(&file_change, &project_change);
+	
+	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
 	do_reset |= project_change;
 
 	if (world_hash_changed) { 
@@ -768,6 +762,13 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		if (render_ok)
 			draw_ok = mfmDraw(screen_res, gui_world_res, camera_from_world);
 		ctimer_stop();
+	}
+
+	if (gui::Begin("Statistics")) {
+		gui::Text("Atom Counts:");
+		for (int i = 0; i < TYPE_COUNTS; ++i)
+			gui::Text("%d: %d (%3.3f%%)", i, stats.counts[i], float(stats.counts[i]) / float(total_sites) * 100.0f);
+		gui::End();
 	}
 
 	open_shader_gui |= true;

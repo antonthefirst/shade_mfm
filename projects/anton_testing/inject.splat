@@ -1,0 +1,14 @@
+# Heavy handed gpulam injection - just take over and do entirely custom code.
+
+=element TestInjector
+\symbol TI
+\color #29f
+\symmetries all
+
+== Rules
+
+change x {
+  ew(C2D(2,2), ew(0));
+}
+
+ @ -> x

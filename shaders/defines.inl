@@ -32,4 +32,7 @@
 
 #define XoroshiroState uvec4
 
+#define InvalidSiteNum (63)
+#define InvalidAtom (Atom(0))
+
 uint XoroshiroNext32();

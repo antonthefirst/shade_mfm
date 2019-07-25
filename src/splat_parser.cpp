@@ -593,7 +593,7 @@ Node* parseGroups(Parser* par, Lexer* lex, Errors* err) {
 	Token tok = lexToken(lex, err);
 	if (tok.type == Token_end_of_stream) {
 		return NULL;
-	} else if (tok.type == Token_newline || tok.type == Token_splat_comment) {
+	} else if (tok.type == Token_newline || tok.type == Token_splat_comment || tok.type == Token_skip) {
 		return parseGroups(par, lex, err);
 	} else if (tok.type == Token_semicolon) {
 		return makeNode(Node_end_statement, tok);
@@ -608,11 +608,18 @@ Node* parseGroups(Parser* par, Lexer* lex, Errors* err) {
 		while (true) {
 			Node* k = parseGroups(par, lex, err);
 			addKid(n, k);
-			if (k == NULL) break;
+			if (!k) {
+				err->add(tok, TempStr("Unmatched %s.", type == Node_braces ? "brace" : "paren"));
+				break;
+			}
+			if (k->type == (type == Node_braces ? Node_braces_end : Node_parens_end))
+				break;
 		}
 		return n;
-	} else if (tok.type == Token_close_brace || tok.type == Token_close_paren) {
-		return NULL;
+	} else if (tok.type == Token_close_brace) {
+		return makeNode(Node_braces_end, tok);
+	} else if (tok.type == Token_close_paren) {
+		return makeNode(Node_parens_end, tok);
 	} else if (tok.type == Token_spatial_form) {
 		return parseSpatialForm(par, err, tok);
 	} else if (tok.type == Token_section_header) {

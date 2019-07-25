@@ -82,6 +82,7 @@ enum TokType { // windows headers steal TokenType
 	Token_end_of_stream,
 	Token_unknown,
 	Token_error, //for handling errors
+	Token_skip,  //for skipping past complex whitespace
 	Token_count
 };
 
@@ -111,6 +112,8 @@ inline const char* toStr(TokType t) {
 	case Token_splat_comment: return "splat comment";
 	case Token_hash: return "hash";
 	case Token_end_of_stream: return "end of stream";
+	case Token_error: return "error";
+	case Token_skip: return "skip";
 	case Token_unknown: return "unknown";
 	default: return "ERROR TOKEN";
 	}
@@ -228,7 +231,9 @@ enum NodeType {
 	Node_unknown,
 	Node_diagram,
 	Node_braces,
+	Node_braces_end,
 	Node_parens,
+	Node_parens_end,
 	Node_end_statement,
 	Node_identifier,
 	Node_keyword,
@@ -250,7 +255,9 @@ inline const char* toStr(NodeType t) {
 	case Node_unknown: return "unknown";
 	case Node_diagram: return "diagram";
 	case Node_braces: return "braces";
+	case Node_braces_end: return "braces end";
 	case Node_parens: return "parens";
+	case Node_parens_end: return "parens end";
 	case Node_end_statement: return "end statement";
 	case Node_identifier: return "identifier";
 	case Node_keyword: return "keyword";

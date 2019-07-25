@@ -8,12 +8,22 @@ void Init(Int x, Int y, Int w, Int h) {
 		S = new(Res);
 	}
 #endif
-#if 1 // diffused mixed dreg and res
+#if 0 // diffused mixed dreg and res
 	if (random_oneIn(100)) {
 		S = new(Test);
 	} else if (random_oneIn(10)) {
 		S = new(Res);
 	}
+#endif
+#if 1 // diffused dreg
+	if (random_oneIn(100)) {
+		S = new(DReg);
+	}
+#endif
+#if 0 // center test
+	if (x == w/2 && y == h/2) {
+		S = new(TestInjector);
+	} 
 #endif
 #if 0 // center test
 	if (random_oneIn(10)) {

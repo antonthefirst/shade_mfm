@@ -2,7 +2,7 @@ void Init(Int x, Int y, Int w, Int h) {
 	Atom S = new(Empty);
 
 	if (random_oneIn(100)) {
-		//S = new(DReg); // dreg not ready yet
+		S = new(DReg); // dreg not ready yet
 	} else if (random_oneIn(10)) {
 		S = new(Res);
 	}

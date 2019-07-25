@@ -133,6 +133,8 @@ Token lexSpatialForm(Lexer* z, Errors* err) {
 		}
 	}
 	t.len = z->at - t.str;
+	if (t.minc == ivec2(INT32_MAX) && t.maxc == ivec2(0)) // all blank, just skip it.
+		t.type = Token_skip;
 	return t;
 }
 Token lexSectionHeader(Lexer* lex, Errors* err) {
@@ -179,7 +181,8 @@ Token lexToken(Lexer* z, Errors* err) {
 	case '}':  t.type = Token_close_brace;   z->at += 1; z->brace_depth -= 1; break;
 	case '\t': 
 	{
-		err->add(t, "Illegal tab character (\\t).");
+		if (!isInjecting(z))
+			err->add(t, "Illegal tab character (\\t).");
 		z->at += 1;
 	} break;
 	case '\n':

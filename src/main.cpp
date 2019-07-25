@@ -23,7 +23,7 @@ int main(int, char**)
 
 	init.v_sync = false;
 
-#define MODE 1
+#define MODE 0
 #if MODE==0 // same monitor
 	init.res_x = 1920;
 	init.res_y = 1080;
@@ -51,7 +51,7 @@ int main(int, char**)
 	init.fullscreen = false;
 #endif
 
-	init.title = "mfm_gpu";
+	init.title = "shade_mfm";
 
 	ret = appInit(init);
 	if (ret) return ret;

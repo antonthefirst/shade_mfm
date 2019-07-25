@@ -27,9 +27,11 @@ struct uvec4 {
 #define SYMMETRY_BITMASK        0x1
 #define SYMMETRY_SIFT           (SYMMETRY_BITMASK << SYMMETRY_LOCAL_OFFSET)
 
+#define TYPE_COUNTS 32
+
 
 struct WorldStats {
-	uint counts[16];
+	uint counts[TYPE_COUNTS];
 	
 	uint event_count_this_batch;
 	uint event_count_min;

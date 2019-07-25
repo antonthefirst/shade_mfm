@@ -89,16 +89,19 @@ void emitHeader(Emitter* emi, int size, char border_char, char endcap_char, Stri
 	emi->code.append(comm_buff, HEADER_WIDTH+1);
 	
 }
-static const char* findNodeEnd(Node* who, const char* end = 0) {
-	end = max(end, who->tok.str + who->tok.len);
-	if (who->kid) end = findNodeEnd(who->kid, end);
-	if (who->sib) end = findNodeEnd(who->sib, end);
-	return end;
+static const char* findBracesEnd(Node* who) {
+	while (who) {
+		if (who->type == Node_braces_end)
+			return who->tok.str;
+		who = who->sib;
+	}
+	assert(false); // we are assuming matching braces at this point
+	return 0;
 }
 void emitBlock(Emitter* emi, Node* who) {
 	if (!who->kid) return; // empty
 	emitLine(emi, "/* Injected from line %d */", who->tok.line_num);
-	const char* block_end = findNodeEnd(who->kid);
+	const char* block_end = findBracesEnd(who->kid);
 	const char* block_start = who->tok.str; // start out sitting on the brace, since the kid's start ignore leading whitespace and indentation
 	while (block_start[0] == '{' || isEndOfLine(block_start[0])) block_start += 1;
 	emi->code.append(StringRange(block_start, block_end - block_start));
@@ -196,6 +199,7 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	/* Vote keycode binds */
 	int nvotes_count = 0;
 	int keycode_from_nvote[41] = { };
+	int nvote_from_keycode[128] = { };
 	for (int i = 0; i < ARRSIZE(Emitter::vote); ++i) {
 		if (emi->lhs_used[i]) {
 			if (emi->vote[i].block || emi->vote[i].expression) {
@@ -223,7 +227,10 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 			emitUnindent(emi);
 			emitLine(emi, "}");
 			keycode_from_nvote[nvotes_count] = i;
+			nvote_from_keycode[i] = nvotes_count;
 			nvotes_count += 1;
+		} else {
+			nvote_from_keycode[i] = -1;
 		}
 	}
 	emi->vote_sum_count_max = max(emi->vote_sum_count_max, nvotes_count);
@@ -287,18 +294,12 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	emitIndent(emi);
 	for (int i = 0; i < nvotes_count; ++i) {
 		emitLine(emi, "_nvotes_%d = 0; /* %c */", i, keycode_from_nvote[i]);
-		emitLine(emi, "_winsn_%d = 63;", i);
+		emitLine(emi, "_winsn_%d = InvalidSiteNum;", i);
 	}
 	for (int i = 0; i < 41; ++i) {
 		if (who->diag.lhs[i] != ' ') { 
-			int vote_idx = 0;
-			for (int v = 0; v < ARRSIZE(Emitter::vote); ++v) {
-				if (who->diag.lhs[i] == v)
-					break;
-				if (emi->lhs_used[v]) {
-					vote_idx += 1;
-				}
-			}
+			int vote_idx = nvote_from_keycode[who->diag.lhs[i]];
+			assert(vote_idx != -1);
 			emitLine(emi, RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(%d, _nvotes_%d, _winsn_%d); /* %c */", RULENAME_FORMAT_ARGS, who->diag.lhs[i], i, vote_idx, vote_idx, who->diag.lhs[i]);
 		}
 	}
@@ -331,15 +332,11 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	emitIndent(emi);
 	for (int i = 0; i < 41; ++i) {
 		if (who->diag.lhs[i] != ' ') {
-			int vote_idx = 0;
-			for (int v = 0; v < ARRSIZE(Emitter::vote); ++v) {
-				if (who->diag.rhs[i] == v)
-					break;
-				if (emi->lhs_used[v]) {
-					vote_idx += 1;
-				}
-			}
-			emitLine(emi, RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(%d, _winsn_%d, _winatom_%d); /*  %c -> %c  */", RULENAME_FORMAT_ARGS, who->diag.rhs[i], i, vote_idx, vote_idx, who->diag.lhs[i], who->diag.rhs[i]);
+			int vote_idx = nvote_from_keycode[who->diag.rhs[i]];
+			if (vote_idx != -1)
+				emitLine(emi, RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(%d, _winsn_%d, _winatom_%d); /*  %c -> %c  */", RULENAME_FORMAT_ARGS, who->diag.rhs[i], i, vote_idx, vote_idx, who->diag.lhs[i], who->diag.rhs[i]);
+			else
+				emitLine(emi, RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(%d, InvalidSiteNum, InvalidAtom); /*  %c -> %c  */", RULENAME_FORMAT_ARGS, who->diag.rhs[i], i, who->diag.lhs[i], who->diag.rhs[i]);
 		}
 	}
 	emitUnindent(emi);
@@ -523,6 +520,7 @@ void emitElement(Emitter* emi, Node* who) {
 static void emitNode(Emitter* emi, Node* who, Errors* err) {
 	Node* next = who->sib;
 
+	// Re-think this logic. Seems like going forward we will need to know what section we're in to deliver good errors.
 	if (who->type == Node_element) {
 		elementStart(emi, who->str_val);
 		emitHeader(emi, 2, '=', '|', StringRange(who->tok.str, who->tok.len)); 
@@ -531,16 +529,21 @@ static void emitNode(Emitter* emi, Node* who, Errors* err) {
 		emitHeader(emi, 1, '-', '|', StringRange(who->tok.str, who->tok.len));  
 	} else if (who->type == Node_diagram) {
 		emitLine(emi, "/* Rule %d:\n................................................................................\n", emi->rule_idx);
-		//emitLine(emi, "\n/*******************************************************************************\n");
 		emitLine(emi, "%.*s", who->tok.len, who->tok.str);
 		emitLine(emi, "\n................................................................................\n*/\n");
-		//emitLine(emi, " *******************************************************************************/\n");
 		emitRule(emi, who, err);
 	} else if (who->type == Node_keyword) {
 		if (isPhaseNode(who)) {
 			next = emitPhase(emi, who, err);
+		} else {
+			err->add(who->tok, TempStr("Keyword '%.*s' is out of place.", who->tok.len, who->tok.str));
+			who = NULL;
 		}
+	} else if (emi->rule_idx > 0) { // inside Rules block
+		err->add(who->tok, TempStr("Sentential form '%.*s' is out of place. (Missing ' ' in first column of spatial form?)", who->tok.len, who->tok.str));
+		who = NULL;
 	}
+
 	if (who) {
 		if (who->kid) emitNode(emi, who->kid, err);
 		if (who->type == Node_rules && emi->rule_idx > 1) emitRuleset(emi);
@@ -615,7 +618,7 @@ void emitElements(Emitter* emi, Node* who, Errors* err) {
 	emi->code.clear();
 
 	/* Core code */
-	emitNode(emi, who, err);
+	emitNode(emi, who->kid, err);
 
 	/* Dispatch methods */
 	emitHeader(emi, 1, '+', '+', StringRange("Dispatches"));  

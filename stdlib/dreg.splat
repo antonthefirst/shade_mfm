@@ -1,0 +1,29 @@
+# Basic DReg element
+
+=element DReg
+\symbol DR
+\color #ff0
+\symmetries all
+
+== Rules
+
+change D {
+	#define pDREG_CREATE  1000
+	#define pRES_CREATE   200
+	#define pDREG_DESTROY 10
+	#define pANY_DESTROY  100 
+
+	if (is(ew(1), Empty)) {
+		if (random_oneIn(pDREG_CREATE)) ew(1, new(DReg));
+		else if (random_oneIn(pRES_CREATE)) ew(1, new(Res));
+		ew_swap(0, 1);
+	} else if ((is(ew(1), DReg) && random_oneIn(pDREG_DESTROY)) ||
+				random_oneIn(pANY_DESTROY))  {
+		ew(1, new(Empty));
+		ew_swap(0, 1);
+	}
+}
+
+ .@ -> .D
+
+ @ -> @

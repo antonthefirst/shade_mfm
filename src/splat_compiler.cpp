@@ -1,3 +1,4 @@
+#include "splat_compiler.h"
 #include "splat_internal.h"
 #include "core/file_stat.h"
 #include "core/log.h"
@@ -126,12 +127,15 @@ Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, E
 	while (Node* block = parseGroups(&par, &lex, err))
 		addKid(root, block);
 	
-	if (root->kid)
-		transformAST(root, root->kid, err);
-	//printNode(root);
+	if (err->errors.count == 0) {
+		if (root->kid)
+			transformAST(root, root->kid, err);
 
-	emitForwardDeclarationsAndTypes(emi_decl, root, err);
-	emitElements(emi_elem, root, err);
+		if (err->errors.count == 0) {
+			emitForwardDeclarationsAndTypes(emi_decl, root, err);
+			emitElements(emi_elem, root, err);
+		}
+	}
 	return root;
 }
 
@@ -155,7 +159,7 @@ static void projectsSelectCallback(const char* pathfile, const char* name) {
 		setProject(n);
 }
 
-void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out) {
+void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out, ProgramInfo* info) {
 	if (current_project.len == 0)
 		current_project.set("basic");
 	if (gui::Begin("Projects")) {
@@ -170,11 +174,11 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	*file_change_out = file_change;
 	*project_change_out = project_change;
 
-	gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
+	//gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Output")) {
 		printErrors(&err);
 	} gui::End();
-	gui::PopStyleColor();
+	//gui::PopStyleColor();
 
 	gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Debug")) {
@@ -247,8 +251,10 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		if (!init_exists)
 			emi_elem.code.append("void Init(Int x, Int y, Int w, Int h) { return; }\n");
 
-		injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
-		injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
+		if (err.errors.count == 0) {
+			injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
+			injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
+		}
 		file_change = false;
 		project_change = false;
 	}
