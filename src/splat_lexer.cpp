@@ -91,6 +91,7 @@ Token lexSpatialForm(Lexer* z, Errors* err) {
 		// parse one line at a time
 		bool is_blank = true;       // is the entire line blank
 		bool is_sequential = false; // did we hit a sequential statement?
+		bool is_comment = false;    // did we hit a comment?
 		while(true) {
 			if (isEndOfStream(z)) {
 				// eos implies a following blank line so end here.
@@ -115,6 +116,9 @@ Token lexSpatialForm(Lexer* z, Errors* err) {
 				// hit a non-spatial form
 				is_sequential = true;
 				break;
+			} else if (z->at[0] == '#' || is_comment) { // once we hit a comment, just keep eating from this clause
+				is_comment = true;
+				z->at += 1;
 			} else {
 				if (z->at[0] == ' ') {
 

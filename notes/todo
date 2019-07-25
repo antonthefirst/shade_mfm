@@ -1,0 +1,2 @@
+
+- handle files being created/destroyed gracefully (right now they linger in cache and cause errors, if you say copy/paste a res, then change the element to dreg, it still has a copy of the -copy file, and that continues conflicing. need to detect deletions)

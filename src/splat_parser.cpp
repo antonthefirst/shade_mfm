@@ -140,7 +140,7 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 			idx.x  = 0;
 			idx.y += 1;
 		} else {
-			if (*c != ' ') {
+			if (*c != ' ' && idx.x <= t.maxc.x) {
 				if (idx.x >= DIAGRAM_IMG_W || idx.y >= DIAGRAM_IMG_H) {
 					ParserError& e = err->errors.push();
 					e.tok = t;
@@ -151,6 +151,21 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 					full_img(v) = *c;
 					char xc = v.x > 0 ? comp_img(v - ivec2(1,0)) : 0;
 					char yc = v.y > 0 ? comp_img(v - ivec2(0,1)) : 0;
+					char dc = (v.x > 0 && v.y > 0) ? comp_img(v - ivec2(1,1)) : 0;
+					char rc = (v.x < (dims.x-1)  && v.y > 0) ? comp_img(v + ivec2(+1,-1)) : 0;
+					if (xc != 0 || yc != 0 || dc != 0 || rc != 0) {
+						
+						// min of non-zero values
+						char min_nonzero = min(yc != 0 ? yc : COMP_COUNT_MAX, dc != 0 ? dc : COMP_COUNT_MAX);
+						min_nonzero = min(min_nonzero, char(xc != 0 ? xc : COMP_COUNT_MAX)); 
+						min_nonzero = min(min_nonzero, char(rc != 0 ? rc : COMP_COUNT_MAX)); 
+						comp_img(v) = min_nonzero;
+						// update the mapping of the larger values down to the new smaller value
+						if (xc != 0) comp_map[xc] = min_nonzero;
+						if (yc != 0) comp_map[yc] = min_nonzero;
+						if (dc != 0) comp_map[dc] = min_nonzero;
+						if (rc != 0) comp_map[rc] = min_nonzero;
+					/*
 					if (xc != 0 && yc != 0) {
 						comp_img(v) = min(xc, yc);
 						if (xc != yc) {
@@ -160,6 +175,9 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 						comp_img(v) = xc;
 					} else if (yc != 0) {
 						comp_img(v) = yc;
+					} else if (dc != 0) {
+						comp_img(v) = dc;
+					*/
 					} else {
 						if (comp_count < COMP_COUNT_MAX) {
 							comp_img(v) = comp_count;
