@@ -13,7 +13,7 @@ sudo apt install build-essential libgl1-mesa-dev libglfw3-dev
 4. run make 
 5. when compiled just run ./shademfm
 
-# Compiling shade_mfm on Windows
+## Compiling shade_mfm on Windows
 1. Download or clone
 2. Unzip
 3. Open shade_mfm.sln, it should load with Visual Studio 2015 (Professional or Community)
