@@ -4,9 +4,32 @@
 #include "core/string_range.h"
 #include "core/log.h" // for tempstr
 
+enum {
+	BASIC_TYPE_Unsigned,
+	BASIC_TYPE_Int,
+	BASIC_TYPE_Unary,
+	BASIC_TYPE_Bool,
+	BASIC_TYPE_C2D,
+	BASIC_TYPE_S2D,
+	BASIC_TYPE_count,
+};
+
+static inline const char* BASIC_TYPE_NAME(int e) {
+	switch (e) {
+	case BASIC_TYPE_Unsigned: return "Unsigned";
+	case BASIC_TYPE_Int: return "Int";
+	case BASIC_TYPE_Unary: return "Unary";
+	case BASIC_TYPE_Bool: return "Bool";
+	case BASIC_TYPE_C2D: return "C2D";
+	case BASIC_TYPE_S2D: return "S2D";
+	default: return "Unknown";
+	}
+};
+
 static const char* GENERIC_OP_NAMES[] = { "get", "set" };
 static const char* INTEGER_OP_NAMES[] = { "add", "sub", "mul", "div" };
 static const char* INTEGER_OPS[] = { "+", "-", "*", "/" };
+
 
 void DataField::appendDataFunctions(String& text, StringRange class_name) {
 	int minof = 0;

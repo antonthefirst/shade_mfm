@@ -1,8 +1,28 @@
 #include "splat_internal.h"
 #include "core/string_range.h"
 
+// #HACK must match data_fields.cpp for now...
+enum BasicType {
+	BasicType_Unsigned,
+	BasicType_Int,
+	BasicType_Bool,
+	BasicType_Unary,
+	BasicType_C2D,
+	BasicType_S2D,
+	BasicType_unknown,
+};
 
-// #TODO need to replace this with a proper thing i think...
+static StringRange basic_type_strings[] = {
+	StringRange("Unsigned"),
+	StringRange("Int"),
+	StringRange("Bool"),
+	StringRange("Unary"),
+	StringRange("C2D"),
+	StringRange("S2D"),
+};
+
+
+//#TODO maybe replace this with a proper stream writer or something?
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -130,7 +150,6 @@ void emitCheckKeycodeDecl(Emitter* emi, int keycode) {
 void emitChangeKeycodeDecl(Emitter* emi, int keycode) {
 	emitLine(emi, "void " RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(SiteNum _cursn, SiteNum _winsn, Atom _winatom) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
 }
-
 static void clearBinds(Emitter* emi) {
 	memset(emi->given,  0, sizeof(Emitter::given));
 	memset(emi->vote,   0, sizeof(Emitter::vote));
@@ -140,6 +159,7 @@ static void clearBinds(Emitter* emi) {
 static void elementStart(Emitter* emi, StringRange name)  {
 	emi->element_name = name;
 	emi->ruleset_idx = 1;
+	emi->data.clear();
 }
 static void rulesetStart(Emitter* emi) {
 	emi->rule_idx = 1;
@@ -551,17 +571,102 @@ static void emitNode(Emitter* emi, Node* who, Errors* err) {
 		if (next) emitNode(emi, next, err);
 	}
 }
-static void emitElementTypeDecls(Emitter* emi, Node* who, Errors* err) {
-	emitLine(emi, "#define Void 0");
-	emitLine(emi, "#define Empty 1");
+static void emitElementTypeDecls(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
+	{
+		emitLine(emi, "#define Void 0");
+		ElementInfo& einfo = info->elems.push();
+		einfo.name = "Void";
+		einfo.symbol = "  ";
+		einfo.color = 0xffff00ff;
+	}
+	{
+		emitLine(emi, "#define Empty 1");
+		ElementInfo& einfo = info->elems.push();
+		einfo.name = "Empty";
+		einfo.symbol = "Em";
+		einfo.color = 0xff000000;
+	}
 	int t = 2;
 	while (who) {
-		if (who->type == Node_element)
+		if (who->type == Node_element) {
 			emitLine(emi, "#define %.*s %d", who->str_val.len, who->str_val.str, t++);
+			ElementInfo& einfo = info->elems.push();
+			einfo.name = who->str_val;
+			einfo.color = 0xffffff00;
+			einfo.symbol = "??";
+			Node* kid = who->kid;
+			while (kid) {
+				if (kid->type == Node_metadata_color) {
+					einfo.color = 0; // ABGR from ARGB
+					einfo.color |= ((kid->unsigned_val >>  0) & 0xff) << 16; // B
+					einfo.color |= ((kid->unsigned_val >>  8) & 0xff) <<  8; // G
+					einfo.color |= ((kid->unsigned_val >> 16) & 0xff) <<  0; // R
+					einfo.color |= ((kid->unsigned_val >> 24) & 0xff) << 24; // A
+				} else if (kid->type == Node_metadata_symbol) {
+					einfo.symbol = kid->str_val;
+				}
+				kid = kid->sib;
+			}
+		}
 		who = who->sib;
 	}
 	emitLine(emi, "#define TYPE_COUNT %d", t);
 	emitLine(emi, "");
+}
+static Node* registerDataMember(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
+	BasicType type = BasicType_unknown;
+	int bitsize = 16; //#TODO this should be 32, but need to make sure 32 actually works correctly (some code may be using things like (1 << bitsize) which would overflow on 32)
+	StringRange name;
+
+	/* Parse type */
+	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member type '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
+	for (int i = 0; i < ARRSIZE(basic_type_strings); ++i) {
+		if (basic_type_strings[i] == StringRange(who->tok.str, who->tok.len)) {
+			type = BasicType(i);
+			break;
+		}
+	}
+	if (type == BasicType_unknown) { err->add(who->tok, TempStr("Data member type '%.*s' is not recognized.", who->tok.len, who->tok.str)); return NULL; }
+	if (!(type == BasicType_Unsigned || type == BasicType_Int)) { err->add(who->tok, TempStr("Data member type '%.*s' is not supported yet :(", who->tok.len, who->tok.str)); return NULL; }
+	if (!who->sib) { err->add(who->tok, "Data member type must be followed by bitsize or name."); return NULL; }
+	who = who->sib;
+
+	/* Parse optional bitsize */
+	if (who->type == Node_parens) {
+		Node* lit = who->kid;
+		if (!lit || lit->type == Node_parens_end) { err->add(who->tok, "Bitsize of data member is missing."); return NULL; }
+		if (lit->type != Node_integer_literal) { err->add(lit->tok, TempStr("Bitsize '%.*s' must be an integer literal.", lit->tok.len, lit->tok.str)); return NULL; }
+		bitsize = lit->tok.int_lit;
+		if (!who->sib) { err->add(who->tok, "Data member must have a name following type and bitsize."); return NULL; }
+		who = who->sib;
+	}
+
+	/* Parse name */
+	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member name '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
+	name = StringRange(who->tok.str, who->tok.len);
+
+	DataField& mem = emi->data.push();
+	mem.name = name;
+	mem.type = type;
+	mem.bitsize = bitsize;
+	mem.global_offset = NO_OFFSET;
+	return who->sib;
+}
+static void emitElementDataAccessors(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
+	while (who) {
+		if (who->type == Node_element) {
+			Node* who_data = who->kid;
+			while (who_data) {
+				if (who_data->type == Node_data) {
+					Node* member = who_data->kid;
+					while (member)
+						member = registerDataMember(emi, member, err, info);
+				}
+				who_data = who_data->sib;
+			}
+		}
+		who = who->sib;
+	}
 }
 static void emitElementDispatches(Emitter* emi, Node* who_first, Errors* err) {
 	/* Behavior */
@@ -606,15 +711,20 @@ static void emitElementDispatches(Emitter* emi, Node* who_first, Errors* err) {
 }
 
 
-void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err) {
+void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
 	emi->code.clear();
 
 	/* Type defines */
 	emitHeader(emi, 1, '+', '+', StringRange("Type Defines"));  
 	emitLine(emi, "\n");
-	emitElementTypeDecls(emi, who->kid, err);
+	emitElementTypeDecls(emi, who->kid, err, info);
+
+	/* Accessors */
+	emitHeader(emi, 1, '+', '+', StringRange("Accessors"));  
+	emitLine(emi, "\n");
+	emitElementDataAccessors(emi, who->kid, err, info);
 }
-void emitElements(Emitter* emi, Node* who, Errors* err) {
+void emitElements(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
 	emi->code.clear();
 
 	/* Core code */

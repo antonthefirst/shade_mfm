@@ -4,6 +4,7 @@
 #include "core/string_range.h"
 #include "core/container.h"
 
+#include "splat_compiler.h"
 #include "data_fields.h" //#TODO clean up, shouldn't have to include so much
 
 ////////////////////////////////////////////////
@@ -37,6 +38,7 @@ struct Lexer;
 struct Node;
 struct Parser;
 struct Errors;
+struct ProgramInfo;
 
 ////////////////////////////////////////////////
 // Lexer
@@ -196,8 +198,6 @@ inline void lexHackEnableInjectedMode(Lexer* lex) { lex->brace_depth = -1; }
 // Errors
 ////////////////////////////////////////////////
 
-#define COLOR_TEXT vec4(1.0f, 1.0f, 1.0f, 1.0f)
-#define COLOR_ERROR vec4(1.0f, 0.1f, 0.1f, 1.0f)
 inline vec4 COLOR_COMPONENT(int c) {
 	vec3 comp_cols[] = { vec3(0.2f), vec3(1.0f,0.3f,0.3f), vec3(0.3f,1.0f,0.3f), vec3(0.3f,0.3f,1.0f), vec3(1.0f,1.0f,0.3f), vec3(0.3f,1.0f,1.0f), vec3(1.0f,0.3f,1.0f) };
 	int i = c == 0 ? 0 : ((c - 1) % (ARRSIZE(comp_cols) - 1) + 1);
@@ -237,6 +237,7 @@ enum NodeType {
 	Node_end_statement,
 	Node_identifier,
 	Node_keyword,
+	Node_integer_literal,
 	Node_element,
 	Node_rules,
 	Node_methods,
@@ -261,6 +262,7 @@ inline const char* toStr(NodeType t) {
 	case Node_end_statement: return "end statement";
 	case Node_identifier: return "identifier";
 	case Node_keyword: return "keyword";
+	case Node_integer_literal: return "integer literal";
 	case Node_element: return "element";
 	case Node_rules: return "rules";
 	case Node_methods: return "methods";
@@ -290,7 +292,8 @@ struct Node {
 	Node* kid;
 	Node* sib;
 	Token tok;
-	// various possible data
+
+	// various possible non-literal data that were parsed from one or more tokens
 	Diagram diag; // #OPT maybe change this to a pointer and store separately
 	int int_val;
 	StringRange str_val;
@@ -331,6 +334,7 @@ struct KeycodeBinding {
 
 struct Emitter {
 	// running state
+	Bunch<DataField> data;
 	KeycodeBinding  given[128]; // binds, 7 bit ASCII
 	KeycodeBinding   vote[128];
 	KeycodeBinding  check[128]; 
@@ -350,7 +354,7 @@ struct Emitter {
 	String code;
 };
 
-void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err);
-void emitElements(Emitter* emi, Node* who, Errors* err);
+void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, ProgramInfo* info);
+void emitElements(Emitter* emi, Node* who, Errors* err, ProgramInfo* info);
 
-void compile(const char* code_start, const char* code_end, Emitter* emi, Errors* err);
+void compile(const char* code_start, const char* code_end, Emitter* emi, Errors* err, ProgramInfo* info);

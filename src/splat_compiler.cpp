@@ -114,7 +114,9 @@ static int getFileEntry(StringRange pathfile, StringRange project_name) {
 	return file_idx;
 }
 
-Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, Emitter* emi_elem, Errors* err) {
+Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, Emitter* emi_elem, Errors* err, ProgramInfo* info) {
+	*info = ProgramInfo();
+
 	Lexer lex = Lexer(code_start, code_end);
 
 	Token tok;
@@ -132,8 +134,8 @@ Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, E
 			transformAST(root, root->kid, err);
 
 		if (err->errors.count == 0) {
-			emitForwardDeclarationsAndTypes(emi_decl, root, err);
-			emitElements(emi_elem, root, err);
+			emitForwardDeclarationsAndTypes(emi_decl, root, err, info);
+			emitElements(emi_elem, root, err, info);
 		}
 	}
 	return root;
@@ -174,6 +176,8 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	*file_change_out = file_change;
 	*project_change_out = project_change;
 
+	bool force_recompile = false;
+
 	//gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Output")) {
 		printErrors(&err);
@@ -186,6 +190,8 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		gui::RadioButton("input", &which, 0); gui::SameLine();
 		gui::RadioButton("output", &which, 1); gui::SameLine();
 		gui::RadioButton("ast", &which, 2);
+		gui::SameLine();
+		force_recompile = gui::Button("recompile");
 		gui::Separator();
 		if (which == 0) {
 			if (splat_concat.len)
@@ -210,7 +216,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	} gui::End();
 	gui::PopStyleColor();
 	
-	if (file_change || project_change) {
+	if (file_change || project_change || force_recompile) {
 		splat_concat.clear();
 		for (int i = 0; i < files.count; ++i) {
 			if (((files[i].project_name.range() == current_project.range()) || (files[i].project_name.range() == StringRange("stdlib"))) && !(files[i].file_name == StringRange("init.gpulam"))) {
@@ -235,7 +241,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		emi_elem = Emitter();
 
 		if (root) freeNode(root);
-		root = compile(splat_concat.str, splat_concat.str + splat_concat.len, &emi_decl, &emi_elem, &err);
+		root = compile(splat_concat.str, splat_concat.str + splat_concat.len, &emi_decl, &emi_elem, &err, info);
 
 		emi_elem.code.append("\n");
 		bool init_exists = false;

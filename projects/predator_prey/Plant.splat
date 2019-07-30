@@ -1,0 +1,15 @@
+# A plant that spreads by converting nearby Res
+
+=element Plant
+\symbol P
+\color #3e2
+\symmetries all
+
+==Rules
+
+change x {
+	if (is(ew(1), Res))
+		ew(1, new(Plant));
+}
+
+ @ -> x

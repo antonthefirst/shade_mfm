@@ -9,6 +9,7 @@
 
 change x {
   ew(C2D(2,2), ew(0));
+  ew(C2D(1,1), new(Void));
 }
 
  @ -> x

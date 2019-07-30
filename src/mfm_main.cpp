@@ -85,6 +85,7 @@ static int overview_state = 0;
 static float overview_transition_timer = -1.0f;
 static float AER_history[30];
 static u32 AER_history_idx = 0;
+static bool show_zero_counts = 0;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -765,9 +766,38 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	}
 
 	if (gui::Begin("Statistics")) {
+		gui::AlignFirstTextHeightToWidgets();
 		gui::Text("Atom Counts:");
-		for (int i = 0; i < TYPE_COUNTS; ++i)
-			gui::Text("%d: %d (%3.3f%%)", i, stats.counts[i], float(stats.counts[i]) / float(total_sites) * 100.0f);
+		gui::SameLine();
+		gui::Checkbox("(show zero counts)", &show_zero_counts);
+		gui::Separator();
+		int max_count_chars = 0;
+		int n = total_sites;
+		while (n > 0) { max_count_chars += 1; n /= 10; }
+		for (int i = 0; i < prog_info.elems.count; ++i) {
+			ElementInfo& einfo = prog_info.elems[i];
+			bool is_void = einfo.name == StringRange("Void");
+			bool show = is_void && stats.counts[i] > 0; // show if there are any Void's
+			show |= stats.counts[i] > 0;                // show if the count is nonzero
+			show |= !is_void && show_zero_counts;       // show everyone if user asks (unless it's Void)
+			if (show) { // show all non-void, and also void if it happens to be non-zero
+				bool hover = false;
+				gui::PushID(i);
+				gui::ColorPip("##color", einfo.color); gui::SameLine();
+				hover |= gui::IsItemHovered();
+				float percent = float(stats.counts[i]) / float(total_sites);
+				if (is_void) gui::PushStyleColor(ImGuiCol_Text, COLOR_ERROR);
+				gui::Text("[%-2.*s]: %*d (%7.3f%%)", einfo.symbol.len, einfo.symbol.str, max_count_chars, stats.counts[i], percent * 100.0f);
+				hover |= gui::IsItemHovered();
+				if (is_void) gui::PopStyleColor();
+				gui::SameLine();
+				gui::ColorBar("##bar", einfo.color, percent);
+				hover |= gui::IsItemHovered();
+				if (hover)
+					gui::SetTooltip("%.*s", einfo.name.len, einfo.name.str);
+				gui::PopID();
+			}
+		}
 		gui::End();
 	}
 

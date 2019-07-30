@@ -1,0 +1,37 @@
+# An animal that eats plants
+
+=element Animal
+\symbol A
+\color #e05
+\symmetries all
+
+==Data
+Unsigned(7) hunger
+
+==Rules
+
+change x {
+	#define pPLANT_ENERGY 50
+
+	/*
+	if (hunger_add(1) == hunger_maxof) {
+		for (SiteNum i = 0; i < 5; ++i) {
+			if (i == 0 || is(ew(i), Empty)) {
+				ew(i, new(Res));
+			}
+		}
+		return;
+	}
+	if (is(ew(1), Plant)) {
+		if ((hunger_sub(pPLANT_ENERGY) == hunger_minof)) {
+			hunger_set((hunger_maxof-hunger_minof) / 2);
+			ew(1, new(Animal));
+			return;
+		}
+		ew(1, new(Empty));
+	}
+	*/
+	if (is(ew(1), Empty)) ew_swap(0,1);
+}
+
+ @ -> x

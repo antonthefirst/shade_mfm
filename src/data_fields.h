@@ -7,28 +7,6 @@
 
 #define NO_OFFSET (-1)
 
-enum {
-	BASIC_TYPE_Unsigned,
-	BASIC_TYPE_Int,
-	BASIC_TYPE_Unary,
-	BASIC_TYPE_Bool,
-	BASIC_TYPE_C2D,
-	BASIC_TYPE_S2D,
-	BASIC_TYPE_count,
-};
-
-inline const char* BASIC_TYPE_NAME(int e) {
-	switch (e) {
-	case BASIC_TYPE_Unsigned: return "Unsigned";
-	case BASIC_TYPE_Int: return "Int";
-	case BASIC_TYPE_Unary: return "Unary";
-	case BASIC_TYPE_Bool: return "Bool";
-	case BASIC_TYPE_C2D: return "C2D";
-	case BASIC_TYPE_S2D: return "S2D";
-	default: return "Unknown";
-	}
-};
-
 struct DataField {
 	StringRange name;
 	int global_offset;

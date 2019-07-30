@@ -635,6 +635,8 @@ Node* parseGroups(Parser* par, Lexer* lex, Errors* err) {
 		return makeNode(Node_identifier, tok);
 	} else if (tok.type == Token_keyword) {
 		return makeNode(Node_keyword, tok);
+	} else if (tok.type == Token_number) {
+		return makeNode(Node_integer_literal, tok);
 	} else {
 		return makeNode(Node_unknown, tok);
 	}

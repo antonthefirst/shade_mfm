@@ -258,6 +258,14 @@
     <ClInclude Include="wrap\recorder_wrap.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="projects\anton_testing\init.gpulam" />
+    <None Include="projects\anton_testing\inject.splat" />
+    <None Include="projects\anton_testing\test.splat" />
+    <None Include="projects\predator_prey\Animal.splat" />
+    <None Include="projects\predator_prey\init.gpulam" />
+    <None Include="projects\predator_prey\Plant.splat" />
+    <None Include="projects\swap_line\init.gpulam" />
+    <None Include="projects\swap_line\SwapLine.splat" />
     <None Include="shaders\bit_packing.inl" />
     <None Include="shaders\clear_stats.comp" />
     <None Include="shaders\cpu_gpu_shared.inl" />

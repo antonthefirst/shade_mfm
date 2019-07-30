@@ -260,6 +260,12 @@
     <Filter Include="projects\basic">
       <UniqueIdentifier>{d945ecc0-1e60-4ca9-9ffe-ad02e5d97d78}</UniqueIdentifier>
     </Filter>
+    <Filter Include="projects\swap_line">
+      <UniqueIdentifier>{353af355-5e36-4d4e-899a-cf7972f693ef}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="projects\predator_prey">
+      <UniqueIdentifier>{48aea71b-7e86-45f7-a6b8-ed0dd1ef72a5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\draw.frag">
@@ -327,6 +333,30 @@
     </None>
     <None Include="stdlib\res.gpulam">
       <Filter>stdlib</Filter>
+    </None>
+    <None Include="projects\anton_testing\init.gpulam">
+      <Filter>projects\anton_testing</Filter>
+    </None>
+    <None Include="projects\anton_testing\inject.splat">
+      <Filter>projects\anton_testing</Filter>
+    </None>
+    <None Include="projects\anton_testing\test.splat">
+      <Filter>projects\anton_testing</Filter>
+    </None>
+    <None Include="projects\swap_line\init.gpulam">
+      <Filter>projects\swap_line</Filter>
+    </None>
+    <None Include="projects\swap_line\SwapLine.splat">
+      <Filter>projects\swap_line</Filter>
+    </None>
+    <None Include="projects\predator_prey\Animal.splat">
+      <Filter>projects\predator_prey</Filter>
+    </None>
+    <None Include="projects\predator_prey\init.gpulam">
+      <Filter>projects\predator_prey</Filter>
+    </None>
+    <None Include="projects\predator_prey\Plant.splat">
+      <Filter>projects\predator_prey</Filter>
     </None>
   </ItemGroup>
 </Project>
