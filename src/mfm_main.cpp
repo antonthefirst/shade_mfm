@@ -24,6 +24,9 @@
 #define COLOR_FORMAT       GL_RGBA8
 #define DEV_FORMAT         GL_RGBA32UI
 
+#define INSPECT_MODE_BASIC 0
+#define INSPECT_MODE_FULL 1
+
 #define NO_SITE ivec2(-1);
 
 // mfm state
@@ -86,6 +89,7 @@ static float overview_transition_timer = -1.0f;
 static float AER_history[30];
 static u32 AER_history_idx = 0;
 static bool show_zero_counts = 0;
+static int inspect_mode = INSPECT_MODE_BASIC;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -558,6 +562,65 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 	gui::Columns();
 
 }
+
+void guiAtomInspector(Atom A) {
+	u32 atom_type = unpackBits(A, ATOM_TYPE_GLOBAL_OFFSET, ATOM_TYPE_BITSIZE);
+	if (atom_type >= prog_info.elems.count) {
+		gui::Text("Unknown or corrupt type %u\n", atom_type);
+		return;
+	}
+
+	const ElementInfo* prog = &prog_info.elems[atom_type];
+	if (inspect_mode == INSPECT_MODE_BASIC)
+		gui::Text("Type: [%-2.*s] %.*s", prog->symbol.len, prog->symbol.str, prog->name.len, prog->name.str);
+	if (inspect_mode == INSPECT_MODE_FULL)
+		gui::Text("%.*s atom (type %08x)", prog->name.len, prog->name.str, atom_type);
+
+	int color_idx = 0;
+	vec4 color_choices[] = {vec4(1.0f,0.7f,0.7f,1.0f), vec4(0.7f,1.0f,0.7f,1.0f)};
+	int prev_field_idx = -1;
+	static String text;
+
+	if (inspect_mode == INSPECT_MODE_BASIC) {		
+		gui::Text("Data: %s", prog->data.count == 2 || prog->data.count == 0 ? "None" : ""); // 2 fields = TYPE and ECC
+		for (int d = 0; d < prog->data.count; ++d) {
+			const DataField& D = prog->data[d];
+			if (D.global_offset == ATOM_ECC_GLOBAL_OFFSET || D.global_offset == ATOM_TYPE_GLOBAL_OFFSET) // skip hidden data
+				continue; 
+			text.clear();
+			D.appendTo(A, text);
+			gui::Text("  %.*s", text.len, text.str);
+		}
+	}
+	if (inspect_mode == INSPECT_MODE_FULL) {
+		for (int i = 0; i < ATOM_BITS; ++i) {
+			text.clear();
+			vec4 col = vec4(0.3f, 0.3f, 0.3f, 1.0f);
+			for (int d = 0; d < prog->data.count; ++d) {
+				const DataField& D = prog->data[d];
+				if (D.global_offset == NO_OFFSET) continue;
+				if (i >= D.global_offset && i < (D.global_offset + D.bitsize)) {
+					if (prev_field_idx == -1)
+						prev_field_idx = d;
+					if (i == D.global_offset)  {
+						D.appendTo(A, text);
+					}
+					if (prev_field_idx != d) {
+						color_idx = (color_idx+1)%ARRSIZE(color_choices);
+						prev_field_idx = d;
+					}
+					col = color_choices[color_idx];
+					break;
+				}
+			}
+			int b = unpackBits(A, i, 1);
+			gui::PushStyleColor(ImGuiCol_Text, col);
+			gui::Text("%d %02d %03d: %d %.*s", i/BITS_PER_COMPONENT, i%BITS_PER_COMPONENT, i, b, text.len, text.str);
+			gui::PopStyleColor(1);
+		}
+	}
+}
+
 void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	ivec2 screen_res = ivec2(app_res_x, app_res_y);
 	
@@ -800,6 +863,20 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		}
 		gui::End();
 	}
+
+	if (gui::Begin("Site Inspector")) {
+		gui::RadioButton("basic", &inspect_mode, INSPECT_MODE_BASIC); gui::SameLine();
+		gui::RadioButton("full", &inspect_mode, INSPECT_MODE_FULL);
+		gui::Spacing();
+		if (site_info_idx.x >= 0 && site_info_idx.y >= 0 && site_info_idx.x < world_res.x && site_info_idx.y < world_res.y) {
+			gui::Text("Site: (%d, %d)", site_info_idx.x, site_info_idx.y);
+			if (inspect_mode == INSPECT_MODE_FULL)
+				gui::Text("dev: %d %d %d %d", site_info.dev.x, site_info.dev.y, site_info.dev.z, site_info.dev.w);
+			guiAtomInspector(site_info.event_layer);
+		} else {
+			gui::Text("Site: Out of bounds.");
+		}
+	} gui::End();
 
 	open_shader_gui |= true;
 	open_shader_gui |= !reset_ok || !update_ok || !clear_stats_ok || !compute_stats_ok || !draw_ok || !render_ok;

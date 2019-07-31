@@ -284,10 +284,11 @@
     <None Include="shaders\uniforms.inl" />
     <None Include="shaders\unit_quad.vert" />
     <None Include="shaders\xoroshiro128starstar.inl" />
-    <None Include="stdlib\afbomb_max.gpulam" />
-    <None Include="stdlib\dreg.gpulam" />
-    <None Include="stdlib\fbomb_max.gpulam" />
-    <None Include="stdlib\res.gpulam" />
+    <None Include="stdlib\DReg.splat" />
+    <None Include="stdlib\ForkBomb.splat" />
+    <None Include="stdlib\FriendlyForkBomb.splat" />
+    <None Include="stdlib\Res.splat" />
+    <None Include="stdlib\Wall.splat" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -118,12 +118,13 @@ void recUI(bool capture_req) {
 					}
 				}
 				if (mode == SCREENSHOT) {
-					if (gui::Button("snap") || capture_req)
+					if (gui::Button("snap"))
 						snap = true;
 				}
 			}
 		} gui::End();
 	}
+	snap |= capture_req;
 
 	source_count = 0;
 }

@@ -8,6 +8,8 @@ layout(location = 3) uniform usampler2D dev_img;
 layout(location = 4) uniform  sampler2D color_img;
 layout(location = 5) uniform usampler2D vote_img;
 
+layout(location = 21) uniform vec2 camera_from_world_scale;
+
 in vec2 st;
 out vec4 out_col;
 
@@ -16,9 +18,23 @@ void main() {
 	uvec4 S = texture(site_bits_img, st);
 	uvec4 D = texture(dev_img, st);
 
+#if 0
 	vec4 col = texture(color_img, st);
 	col.xyz = lrgb_from_srgb(col.xyz) * col.w;
-	
+#else // this isn't principled....need to actually plumb the resolution, and compute proper pixel footprint..
+	vec4 col = vec4(0.0);
+	const int A = 5;
+	vec2 tex_size = 1.0/(vec2(1920,1080)*A*camera_from_world_scale);
+	for (int x = -A; x <= A; ++x) {
+		for (int y = -A; y <= A; ++y) {
+			vec4 c = texture(color_img, st + vec2(x,y)*tex_size);
+			c.xyz = lrgb_from_srgb(c.xyz) * c.w;
+			col += c;
+		}
+	}
+	col /= (A*2+1)*(A*2+1);
+#endif
+
 #if 0 // draw sites
 	//col = vec4(0);
 	const int R = 4;

@@ -10,7 +10,7 @@ struct ElementInfo {
 	StringRange name = "";
 	StringRange symbol = "";
 	u32 color = 0; // in ABGR format. (not ARGB, like MFM)
-	Bunch<DataField> fields;
+	Bunch<DataField> data;
 };
 
 struct ProgramInfo {

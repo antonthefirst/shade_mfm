@@ -355,6 +355,4 @@ struct Emitter {
 };
 
 void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, ProgramInfo* info);
-void emitElements(Emitter* emi, Node* who, Errors* err, ProgramInfo* info);
-
-void compile(const char* code_start, const char* code_end, Emitter* emi, Errors* err, ProgramInfo* info);
+void emitElements(Emitter* emi_decl, Emitter* emi_elem, Node* who, Errors* err, ProgramInfo* info);

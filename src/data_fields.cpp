@@ -32,6 +32,7 @@ static const char* INTEGER_OPS[] = { "+", "-", "*", "/" };
 
 
 void DataField::appendDataFunctions(String& text, StringRange class_name) {
+	if (internal) return;
 	int minof = 0;
 	int maxof = 0;
 	const char* suffix = "";
@@ -122,6 +123,7 @@ void DataField::appendDataFunctions(String& text, StringRange class_name) {
 
 }
 void DataField::appendLocalDataFunctionDefines(String& text, StringRange class_name, bool define) {
+	if (internal) return;
 	if (define) {
 		text.append(TempStr("#define %.*s_minof %.*s_%.*s_minof\n", name.len, name.str, class_name.len, class_name.str, name.len, name.str));
 		text.append(TempStr("#define %.*s_maxof %.*s_%.*s_maxof\n", name.len, name.str, class_name.len, class_name.str, name.len, name.str));
@@ -151,5 +153,71 @@ void DataField::appendTo(Atom A, String& text) const {
 	case BASIC_TYPE_Unsigned: text.append(TempStr("%u", (u32)unpackBits(A, global_offset, bitsize))); return;
 	case BASIC_TYPE_Int:      text.append(TempStr("%d", unpackInt(A, global_offset, bitsize))); return;
 	default: text.append("?"); return;
+	}
+}
+
+void dataAddInternalAndPickOffsets(Bunch<DataField>& data) {
+	const int UNUSED = -1;
+	int bit_owners[ATOM_BITS];
+	for (int i = 0; i < ATOM_BITS; ++i)
+		bit_owners[i] = UNUSED;
+
+	DataField& ecc = data.push();
+	ecc.bitsize = ATOM_ECC_BITSIZE;
+	ecc.global_offset = ATOM_ECC_GLOBAL_OFFSET;
+	ecc.name = StringRange("ECC");
+	ecc.type = BASIC_TYPE_Unsigned;
+	ecc.internal = true;
+	for (int i = ecc.global_offset; i < (ecc.global_offset+ecc.bitsize); ++i)
+		bit_owners[i] = &ecc - data.ptr;
+		
+	DataField& atype = data.push();
+	atype.bitsize = ATOM_TYPE_BITSIZE;
+	atype.global_offset = ATOM_TYPE_GLOBAL_OFFSET;
+	atype.name = StringRange("AtomType");
+	atype.type = BASIC_TYPE_Unsigned;
+	atype.internal = true;
+	for (int i = atype.global_offset; i < (atype.global_offset+atype.bitsize); ++i)
+		bit_owners[i] = &atype - data.ptr;
+
+	for (int i = 0; i < data.count; ++i) {
+		DataField& f = data[i];
+		if (f.global_offset != NO_OFFSET)
+			continue;
+			
+		log("Trying to allocate %.*s\n", f.name.len, f.name.str);
+		int global_offset = 0;
+		while (true) {
+			if (global_offset >= ATOM_BITS) {
+				log("Unable to allocate %.*s\n",  f.name.len, f.name.str);
+				break;
+			}
+			if (bit_owners[global_offset] != UNUSED) {
+				global_offset++;
+				continue;
+			}
+			bool usable = true;
+			int component = global_offset / BITS_PER_COMPONENT; // the vector component of this spot
+			for (int b = global_offset; b < (global_offset + f.bitsize); ++b) {
+				if (bit_owners[b] != UNUSED) { // someone else is here already
+					usable = false;
+					break;
+				}
+				if ((b / BITS_PER_COMPONENT) != component) { // we changed components
+					usable = false;
+					break;
+				}
+			}
+			if (usable) {
+				// set my bits
+				for (int b = global_offset; b < (global_offset + f.bitsize); ++b)
+					bit_owners[b] = i;
+				f.global_offset = global_offset;
+				log("Put %.*s at %d to %d\n", f.name.len, f.name.str, global_offset, global_offset + f.bitsize);
+				break;
+			} else {
+				global_offset += 1;
+			}
+		}
 	}
 }

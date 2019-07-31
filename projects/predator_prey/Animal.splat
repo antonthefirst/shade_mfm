@@ -12,8 +12,6 @@ Unsigned(7) hunger
 
 change x {
 	#define pPLANT_ENERGY 50
-
-	/*
 	if (hunger_add(1) == hunger_maxof) {
 		for (SiteNum i = 0; i < 5; ++i) {
 			if (i == 0 || is(ew(i), Empty)) {
@@ -30,7 +28,6 @@ change x {
 		}
 		ew(1, new(Empty));
 	}
-	*/
 	if (is(ew(1), Empty)) ew_swap(0,1);
 }
 

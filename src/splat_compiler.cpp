@@ -135,7 +135,7 @@ Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, E
 
 		if (err->errors.count == 0) {
 			emitForwardDeclarationsAndTypes(emi_decl, root, err, info);
-			emitElements(emi_elem, root, err, info);
+			emitElements(emi_decl, emi_elem, root, err, info);
 		}
 	}
 	return root;

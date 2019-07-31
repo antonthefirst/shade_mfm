@@ -4,7 +4,9 @@
 #include "shaders/cpu_gpu_shared.inl"
 #include "shaders/defines.inl"
 #include "core/string_range.h"
+#include "core/container.h"
 
+#define NUM_INTERNAL_DATA_MEMBERS (2)
 #define NO_OFFSET (-1)
 
 struct DataField {
@@ -12,6 +14,7 @@ struct DataField {
 	int global_offset;
 	int bitsize;
 	int type;
+	bool internal;
 	void appendDataFunctions(String& text, StringRange class_name);
 	void appendLocalDataFunctionDefines(String& text, StringRange class_name, bool define);
 	void appendTo(Atom A, String& text) const;
@@ -44,3 +47,4 @@ inline int unpackInt(Atom A, int global_offset, int bitsize) {
 	return int(b);
 }
 
+void dataAddInternalAndPickOffsets(Bunch<DataField>& data);

@@ -78,7 +78,12 @@ int main(int, char**)
 		ctimer_start("frame");
 		mfmUpdate(&in, app_state.res_x, app_state.res_y, app_state.refresh_rate);
 
-		recUI(in.key.press[KEY_F9]);
+		bool capture_req = in.key.press[KEY_F9];
+		if (gui::Begin("Capture")) {
+			capture_req |= gui::Button("screenshot");
+		} gui::End();
+
+		recUI(capture_req);
 		gtimer_stop();
 		gtimer_reset();
 		timerUI(in);

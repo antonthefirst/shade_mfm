@@ -156,15 +156,6 @@ static void clearBinds(Emitter* emi) {
 	memset(emi->check,  0, sizeof(Emitter::check));
 	memset(emi->change, 0, sizeof(Emitter::change));
 }
-static void elementStart(Emitter* emi, StringRange name)  {
-	emi->element_name = name;
-	emi->ruleset_idx = 1;
-	emi->data.clear();
-}
-static void rulesetStart(Emitter* emi) {
-	emi->rule_idx = 1;
-	clearBinds(emi);
-}
 
 static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	memset(emi->nsites, 0, sizeof(Emitter::nsites));
@@ -535,18 +526,109 @@ void emitElement(Emitter* emi, Node* who) {
 	}
 	emitUnindent(emi);
 	emitLine(emi, "}");
-}
 
-static void emitNode(Emitter* emi, Node* who, Errors* err) {
+	/* Undef the accessors */
+	emitLine(emi, "");
+	for (int i = 0; i < emi->data.count; ++i) {
+		DataField& dat = emi->data[i]; 
+		dat.appendLocalDataFunctionDefines(emi->code, emi->element_name, false);
+	}
+}
+static Node* collectDataMember(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
+	BasicType type = BasicType_unknown;
+	int bitsize = 16; //#TODO this should be 32, but need to make sure 32 actually works correctly (some code may be using things like (1 << bitsize) which would overflow on 32)
+	StringRange name;
+
+	/* Parse type */
+	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member type '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
+	for (int i = 0; i < ARRSIZE(basic_type_strings); ++i) {
+		if (basic_type_strings[i] == StringRange(who->tok.str, who->tok.len)) {
+			type = BasicType(i);
+			break;
+		}
+	}
+	if (type == BasicType_unknown) { err->add(who->tok, TempStr("Data member type '%.*s' is not recognized.", who->tok.len, who->tok.str)); return NULL; }
+	if (!(type == BasicType_Unsigned || type == BasicType_Int)) { err->add(who->tok, TempStr("Data member type '%.*s' is not supported yet :(", who->tok.len, who->tok.str)); return NULL; }
+	if (!who->sib) { err->add(who->tok, "Data member type must be followed by bitsize or name."); return NULL; }
+	who = who->sib;
+
+	/* Parse optional bitsize */
+	if (who->type == Node_parens) {
+		Node* lit = who->kid;
+		if (!lit || lit->type == Node_parens_end) { err->add(who->tok, "Bitsize of data member is missing."); return NULL; }
+		if (lit->type != Node_integer_literal) { err->add(lit->tok, TempStr("Bitsize '%.*s' must be an integer literal.", lit->tok.len, lit->tok.str)); return NULL; }
+		bitsize = lit->tok.int_lit;
+		if (!who->sib) { err->add(who->tok, "Data member must have a name following type and bitsize."); return NULL; }
+		who = who->sib;
+	}
+
+	/* Parse name */
+	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member name '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
+	name = StringRange(who->tok.str, who->tok.len);
+
+	DataField& mem = emi->data.push();
+	mem.name = name;
+	mem.type = type;
+	mem.bitsize = bitsize;
+	mem.global_offset = NO_OFFSET;
+	mem.internal = false;
+	return who->sib;
+}
+static void elementStart(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err, ProgramInfo* info)  {
+	emi->element_name = who->str_val;
+	emi->ruleset_idx = 1;
+	emi->data.clear();
+	
+	/* Collect Data Members */
+	Node* who_data = who->kid;
+	while (who_data) {
+		if (who_data->type == Node_data) {
+			Node* member = who_data->kid;
+			while (member)
+				member = collectDataMember(emi, member, err, info);
+		}
+		who_data = who_data->sib;
+	}
+
+	/* Pick offsets, avoiding straddling component boundaries */
+	dataAddInternalAndPickOffsets(emi->data);
+
+	/* Write header */
+	emitHeader(emi, 2, '=', '|', StringRange(who->tok.str, who->tok.len)); 
+	emitLine(emi, "");
+
+	/* Write out the accessors */
+	if (emi->data.count > NUM_INTERNAL_DATA_MEMBERS) {
+		emitHeader(emi_decl, 1, '+', '+', StringRange(TempStr("Data Member Accessors for %.*s", emi->element_name.len, emi->element_name.str)));  
+		emitLine(emi_decl, "");
+	}
+	for (int i = 0; i < emi->data.count; ++i) {
+		DataField& dat = emi->data[i]; 
+		dat.appendDataFunctions(emi_decl->code, emi->element_name);
+		dat.appendLocalDataFunctionDefines(emi->code, emi->element_name, true);
+	}
+
+	/* Copy data layout for external use */
+	for (int i = 0; i < info->elems.count; ++i) {
+		if (info->elems[i].name == emi->element_name) {
+			info->elems[i].data = emi->data;
+			break;
+		}
+	}
+}
+static void rulesetStart(Emitter* emi, Node* who) {
+	emi->rule_idx = 1;
+	clearBinds(emi);
+	emitHeader(emi, 1, '-', '|', StringRange(who->tok.str, who->tok.len)); 
+}
+static void emitNode(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
 	Node* next = who->sib;
 
 	// Re-think this logic. Seems like going forward we will need to know what section we're in to deliver good errors.
 	if (who->type == Node_element) {
-		elementStart(emi, who->str_val);
-		emitHeader(emi, 2, '=', '|', StringRange(who->tok.str, who->tok.len)); 
+		elementStart(emi_decl, emi, who, err, info);
 	} else if (who->type == Node_rules) {
-		rulesetStart(emi);
-		emitHeader(emi, 1, '-', '|', StringRange(who->tok.str, who->tok.len));  
+		rulesetStart(emi, who);
 	} else if (who->type == Node_diagram) {
 		emitLine(emi, "/* Rule %d:\n................................................................................\n", emi->rule_idx);
 		emitLine(emi, "%.*s", who->tok.len, who->tok.str);
@@ -565,10 +647,10 @@ static void emitNode(Emitter* emi, Node* who, Errors* err) {
 	}
 
 	if (who) {
-		if (who->kid) emitNode(emi, who->kid, err);
+		if (who->kid) emitNode(emi_decl, emi, who->kid, err, info);
 		if (who->type == Node_rules && emi->rule_idx > 1) emitRuleset(emi);
 		if (who->type == Node_element && emi->ruleset_idx > 1) emitElement(emi, who);
-		if (next) emitNode(emi, next, err);
+		if (next) emitNode(emi_decl, emi, next, err, info);
 	}
 }
 static void emitElementTypeDecls(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
@@ -612,61 +694,6 @@ static void emitElementTypeDecls(Emitter* emi, Node* who, Errors* err, ProgramIn
 	}
 	emitLine(emi, "#define TYPE_COUNT %d", t);
 	emitLine(emi, "");
-}
-static Node* registerDataMember(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
-	BasicType type = BasicType_unknown;
-	int bitsize = 16; //#TODO this should be 32, but need to make sure 32 actually works correctly (some code may be using things like (1 << bitsize) which would overflow on 32)
-	StringRange name;
-
-	/* Parse type */
-	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member type '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
-	for (int i = 0; i < ARRSIZE(basic_type_strings); ++i) {
-		if (basic_type_strings[i] == StringRange(who->tok.str, who->tok.len)) {
-			type = BasicType(i);
-			break;
-		}
-	}
-	if (type == BasicType_unknown) { err->add(who->tok, TempStr("Data member type '%.*s' is not recognized.", who->tok.len, who->tok.str)); return NULL; }
-	if (!(type == BasicType_Unsigned || type == BasicType_Int)) { err->add(who->tok, TempStr("Data member type '%.*s' is not supported yet :(", who->tok.len, who->tok.str)); return NULL; }
-	if (!who->sib) { err->add(who->tok, "Data member type must be followed by bitsize or name."); return NULL; }
-	who = who->sib;
-
-	/* Parse optional bitsize */
-	if (who->type == Node_parens) {
-		Node* lit = who->kid;
-		if (!lit || lit->type == Node_parens_end) { err->add(who->tok, "Bitsize of data member is missing."); return NULL; }
-		if (lit->type != Node_integer_literal) { err->add(lit->tok, TempStr("Bitsize '%.*s' must be an integer literal.", lit->tok.len, lit->tok.str)); return NULL; }
-		bitsize = lit->tok.int_lit;
-		if (!who->sib) { err->add(who->tok, "Data member must have a name following type and bitsize."); return NULL; }
-		who = who->sib;
-	}
-
-	/* Parse name */
-	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Data member name '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
-	name = StringRange(who->tok.str, who->tok.len);
-
-	DataField& mem = emi->data.push();
-	mem.name = name;
-	mem.type = type;
-	mem.bitsize = bitsize;
-	mem.global_offset = NO_OFFSET;
-	return who->sib;
-}
-static void emitElementDataAccessors(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
-	while (who) {
-		if (who->type == Node_element) {
-			Node* who_data = who->kid;
-			while (who_data) {
-				if (who_data->type == Node_data) {
-					Node* member = who_data->kid;
-					while (member)
-						member = registerDataMember(emi, member, err, info);
-				}
-				who_data = who_data->sib;
-			}
-		}
-		who = who->sib;
-	}
 }
 static void emitElementDispatches(Emitter* emi, Node* who_first, Errors* err) {
 	/* Behavior */
@@ -716,22 +743,23 @@ void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, Progr
 
 	/* Type defines */
 	emitHeader(emi, 1, '+', '+', StringRange("Type Defines"));  
-	emitLine(emi, "\n");
+	emitLine(emi, "");
 	emitElementTypeDecls(emi, who->kid, err, info);
 
-	/* Accessors */
-	emitHeader(emi, 1, '+', '+', StringRange("Accessors"));  
-	emitLine(emi, "\n");
-	emitElementDataAccessors(emi, who->kid, err, info);
+	/* Forward decls needed by data member functions */
+	emitHeader(emi, 1, '+', '+', StringRange("Forward Declarations for Data Members"));  
+	emitLine(emi, "");
+	emitLine(emi, "Atom ew(SiteNum i);");
+	emitLine(emi, "void ew(SiteNum i, Atom S);");
 }
-void emitElements(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
-	emi->code.clear();
+void emitElements(Emitter* emi_decl, Emitter* emi_elem, Node* who, Errors* err, ProgramInfo* info) {
+	emi_elem->code.clear();
 
 	/* Core code */
-	emitNode(emi, who->kid, err);
+	emitNode(emi_decl, emi_elem, who->kid, err, info);
 
 	/* Dispatch methods */
-	emitHeader(emi, 1, '+', '+', StringRange("Dispatches"));  
-	emitLine(emi, "\n");
-	emitElementDispatches(emi, who->kid, err);
+	emitHeader(emi_elem, 1, '+', '+', StringRange("Dispatches"));  
+	emitLine(emi_elem, "\n");
+	emitElementDispatches(emi_elem, who->kid, err);
 }

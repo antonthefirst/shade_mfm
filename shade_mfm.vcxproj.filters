@@ -322,18 +322,6 @@
     <None Include="shaders\splitmix32.inl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="stdlib\afbomb_max.gpulam">
-      <Filter>stdlib</Filter>
-    </None>
-    <None Include="stdlib\dreg.gpulam">
-      <Filter>stdlib</Filter>
-    </None>
-    <None Include="stdlib\fbomb_max.gpulam">
-      <Filter>stdlib</Filter>
-    </None>
-    <None Include="stdlib\res.gpulam">
-      <Filter>stdlib</Filter>
-    </None>
     <None Include="projects\anton_testing\init.gpulam">
       <Filter>projects\anton_testing</Filter>
     </None>
@@ -357,6 +345,21 @@
     </None>
     <None Include="projects\predator_prey\Plant.splat">
       <Filter>projects\predator_prey</Filter>
+    </None>
+    <None Include="stdlib\DReg.splat">
+      <Filter>stdlib</Filter>
+    </None>
+    <None Include="stdlib\ForkBomb.splat">
+      <Filter>stdlib</Filter>
+    </None>
+    <None Include="stdlib\FriendlyForkBomb.splat">
+      <Filter>stdlib</Filter>
+    </None>
+    <None Include="stdlib\Res.splat">
+      <Filter>stdlib</Filter>
+    </None>
+    <None Include="stdlib\Wall.splat">
+      <Filter>stdlib</Filter>
     </None>
   </ItemGroup>
 </Project>
