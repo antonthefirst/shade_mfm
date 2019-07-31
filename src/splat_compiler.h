@@ -17,5 +17,5 @@ struct ProgramInfo {
 	Bunch<ElementInfo> elems;
 };
 
-void feedbackGLSLCompilerErrors(StringRange glsl_errors_in);
 void checkForSplatProgramChanges(bool* file_change, bool* project_change, ProgramInfo* info);
+void showSplatCompilerErrors(StringRange glsl_err);

@@ -1,0 +1,1 @@
+- switching sizes from small to large back and forth can sometimes cause large void areas, as if it's not being reset or there is a frame where the gpu thinks the image is smaller than it is. this may also be the reason 16k square images weren't working, since the gpu should support up to 32k! (maybe need to wait on something?)

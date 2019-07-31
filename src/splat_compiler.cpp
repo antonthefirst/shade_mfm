@@ -37,7 +37,6 @@ static String splat_concat;
 static Bunch<StringRange> file_ranges;
 static Bunch<StringRange> file_names;
 static Errors err;
-static StringRange glsl_err;
 static bool show_errors = false;
 static Emitter emi_decl;
 static Emitter emi_elem;
@@ -164,10 +163,6 @@ static void projectsSelectCallback(const char* pathfile, const char* name) {
 	if (gui::Selectable(name, current_project.range() == n))
 		setProject(n);
 }
-
-void feedbackGLSLCompilerErrors(StringRange glsl_errors_in) {
-	glsl_err = glsl_errors_in;
-}
 void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out, ProgramInfo* info) {
 	if (current_project.len == 0)
 		current_project.set("basic");
@@ -184,30 +179,6 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	*project_change_out = project_change;
 
 	bool force_recompile = false;
-
-	bool any_errors = err.errors.count != 0 || glsl_err.len != 0;
-	show_errors |= any_errors;
-	if (show_errors) {
-		if (any_errors) {
-			gui::PushStyleColor(ImGuiCol_TitleBg, COLOR_ERROR);
-			gui::PushStyleColor(ImGuiCol_TitleBgActive, COLOR_ERROR);
-			gui::PushStyleColor(ImGuiCol_TitleBgCollapsed, COLOR_ERROR);
-		}
-		if (gui::Begin("Compiler Output", any_errors ? NULL : &show_errors)) { // don't allow to close when there are errors
-			if (any_errors) {
-				printErrors(&err, glsl_err, file_names.ptr, file_ranges.ptr, file_ranges.count);
-			} else {
-				gui::AlignFirstTextHeightToWidgets();
-				gui::Text("SPLAT compiled successfully."); gui::SameLine();
-				if (gui::Button("OK")) {
-					show_errors = false;
-				}
-			}
-		} gui::End();
-		if (any_errors) {
-			gui::PopStyleColor(3);
-		}
-	}
 
 	gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Debug")) {
@@ -304,6 +275,30 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		file_change = false;
 		project_change = false;
 	}
+}
 
-
+void showSplatCompilerErrors(StringRange glsl_err) {
+	bool any_errors = err.errors.count != 0 || glsl_err.len != 0;
+	show_errors |= any_errors;
+	if (show_errors) {
+		if (any_errors) {
+			gui::PushStyleColor(ImGuiCol_TitleBg, vec4(COLOR_ERROR.xyz()*0.6f,1.0f));
+			gui::PushStyleColor(ImGuiCol_TitleBgActive, vec4(COLOR_ERROR.xyz()*0.6f,1.0f));
+			gui::PushStyleColor(ImGuiCol_TitleBgCollapsed, vec4(COLOR_ERROR.xyz()*0.6f,1.0f));
+		}
+		if (gui::Begin("Compiler Output", any_errors ? NULL : &show_errors)) { // don't allow to close when there are errors
+			if (any_errors) {
+				printErrors(&err, glsl_err, file_names.ptr, file_ranges.ptr, file_ranges.count);
+			} else {
+				gui::AlignFirstTextHeightToWidgets();
+				gui::Text("SPLAT compiled successfully."); gui::SameLine();
+				if (gui::Button("OK")) {
+					show_errors = false;
+				}
+			}
+		} gui::End();
+		if (any_errors) {
+			gui::PopStyleColor(3);
+		}
+	}
 }

@@ -778,7 +778,6 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	bool project_change = false;
 	
 	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
-	feedbackGLSLCompilerErrors(StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0));
 	do_reset |= project_change;
 
 	if (world_hash_changed) { 
@@ -829,6 +828,8 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 			draw_ok = mfmDraw(screen_res, gui_world_res, camera_from_world);
 		ctimer_stop();
 	}
+
+	showSplatCompilerErrors(StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0));
 
 	if (gui::Begin("Statistics")) {
 		gui::AlignFirstTextHeightToWidgets();
