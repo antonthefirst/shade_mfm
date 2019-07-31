@@ -224,8 +224,9 @@ struct Errors {
 	void add(Token tok, const char* msg);
 };
 
+int  findFileIdx(StringRange* file_ranges, int file_count, const char* str);
 void printNode(Node* who, int depth = 0);
-void printErrors(Errors* err, StringRange* file_names, StringRange* file_ranges, int file_count);
+void printErrors(Errors* err, StringRange glsl_err, StringRange* file_names, StringRange* file_ranges, int file_count);
 void printCode(StringRange code);
 
 
@@ -339,6 +340,11 @@ struct KeycodeBinding {
 };
 
 struct Emitter {
+	// error state
+	StringRange* file_names = NULL;
+	StringRange* file_ranges = NULL;
+	int file_count = 0;
+
 	// running state
 	Bunch<DataField> data;
 	KeycodeBinding  given[128]; // binds, 7 bit ASCII

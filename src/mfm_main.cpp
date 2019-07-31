@@ -90,6 +90,7 @@ static float AER_history[30];
 static u32 AER_history_idx = 0;
 static bool show_zero_counts = 0;
 static int inspect_mode = INSPECT_MODE_BASIC;
+static ProgramStats prog_stats;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -357,7 +358,7 @@ void mfmTerm() {
 }
 
 static bool mfmGPURender(ivec2 world_res) {
-	if (useProgram("shaders/render.comp")) {
+	if (useProgram("shaders/render.comp", &prog_stats)) {
 		gtimer_start("render");
 		mfmSetUniforms();
 		glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
@@ -777,6 +778,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	bool project_change = false;
 	
 	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
+	feedbackGLSLCompilerErrors(StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0));
 	do_reset |= project_change;
 
 	if (world_hash_changed) { 

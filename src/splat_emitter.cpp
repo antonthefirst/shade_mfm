@@ -120,7 +120,15 @@ static const char* findBracesEnd(Node* who) {
 }
 void emitBlock(Emitter* emi, Node* who) {
 	if (!who->kid) return; // empty
-	emitLine(emi, "/* Injected from line %d */", who->tok.line_num);
+	int file_idx = findFileIdx(emi->file_ranges, emi->file_count, who->tok.str);
+#ifdef _WIN32
+	StringRange file_name = emi->file_names[file_idx];
+	emitLine(emi, "/* Injected from file %.*s line %d */", file_name.len, file_name.str, who->tok.line_num);
+	emitLine(emi, "#line %d \"%.*s\"", who->tok.line_num+1, file_name.len, file_name.str);
+#else
+	emitLine(emi, "/* Injected from file %d line %d */", file_idx, who->tok.line_num);
+	emitLine(emi, "#line %d %d", who->tok.line_num+1, file_idx);
+#endif
 	const char* block_end = findBracesEnd(who->kid);
 	const char* block_start = who->tok.str; // start out sitting on the brace, since the kid's start ignore leading whitespace and indentation
 	while (block_start[0] == '{' || isEndOfLine(block_start[0])) block_start += 1;

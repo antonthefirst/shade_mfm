@@ -37,6 +37,8 @@ static String splat_concat;
 static Bunch<StringRange> file_ranges;
 static Bunch<StringRange> file_names;
 static Errors err;
+static StringRange glsl_err;
+static bool show_errors = false;
 static Emitter emi_decl;
 static Emitter emi_elem;
 static Node* root;
@@ -163,6 +165,9 @@ static void projectsSelectCallback(const char* pathfile, const char* name) {
 		setProject(n);
 }
 
+void feedbackGLSLCompilerErrors(StringRange glsl_errors_in) {
+	glsl_err = glsl_errors_in;
+}
 void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out, ProgramInfo* info) {
 	if (current_project.len == 0)
 		current_project.set("basic");
@@ -180,11 +185,29 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 
 	bool force_recompile = false;
 
-	//gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
-	if (gui::Begin("Compiler Output")) {
-		printErrors(&err, file_names.ptr, file_ranges.ptr, file_ranges.count);
-	} gui::End();
-	//gui::PopStyleColor();
+	bool any_errors = err.errors.count != 0 || glsl_err.len != 0;
+	show_errors |= any_errors;
+	if (show_errors) {
+		if (any_errors) {
+			gui::PushStyleColor(ImGuiCol_TitleBg, COLOR_ERROR);
+			gui::PushStyleColor(ImGuiCol_TitleBgActive, COLOR_ERROR);
+			gui::PushStyleColor(ImGuiCol_TitleBgCollapsed, COLOR_ERROR);
+		}
+		if (gui::Begin("Compiler Output", any_errors ? NULL : &show_errors)) { // don't allow to close when there are errors
+			if (any_errors) {
+				printErrors(&err, glsl_err, file_names.ptr, file_ranges.ptr, file_ranges.count);
+			} else {
+				gui::AlignFirstTextHeightToWidgets();
+				gui::Text("SPLAT compiled successfully."); gui::SameLine();
+				if (gui::Button("OK")) {
+					show_errors = false;
+				}
+			}
+		} gui::End();
+		if (any_errors) {
+			gui::PopStyleColor(3);
+		}
+	}
 
 	gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Debug")) {
@@ -235,11 +258,17 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 				// this is because strtol is used internally, and that uses null term to do it's thing
 				*w = 0;
 				file_names.push(files[i].file_name);
-				StringRange& file_range = file_ranges.push();
-				file_range.str = splat_concat.str + splat_concat.len;
 				splat_concat.append(StringRange(cleaned, w-cleaned));
 				splat_concat.append("\n");
-				file_range.len = (splat_concat.str + splat_concat.len) - file_range.str;
+				// add just the length for now, and compute the pointers later after splat_concat is fully complete and no longer reallocs
+				StringRange& file_range = file_ranges.push();
+				file_range.len = w-cleaned + 1; // string + newline (can't compare pointers, since String potentially reallocs inside during append)
+			}
+		}
+		if (file_ranges.count > 0) {
+			file_ranges[0].str = splat_concat.str;
+			for (int i = 1; i < file_ranges.count; ++i) {
+				file_ranges[i].str = file_ranges[i-1].str + file_ranges[i-1].len;
 			}
 		}
 		err = Errors();
@@ -247,6 +276,9 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		emi_elem.code.free();
 		emi_decl = Emitter();
 		emi_elem = Emitter();
+		emi_elem.file_names = file_names.ptr;
+		emi_elem.file_ranges = file_ranges.ptr;
+		emi_elem.file_count = file_names.count;
 
 		if (root) freeNode(root);
 		root = compile(splat_concat.str, splat_concat.str + splat_concat.len, file_ranges.ptr, file_ranges.count, &emi_decl, &emi_elem, &err, info);
