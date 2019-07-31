@@ -5,6 +5,9 @@ https://movablefeastmachine.org/
 
 https://github.com/DaveAckley/MFM
 
+## Videos
+1. UI Basics: https://www.youtube.com/watch?v=tGccSJQMoGk
+
 ## System Requirements
 OpenGL 4.3 compatible graphics card and drivers.
 
