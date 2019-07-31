@@ -449,27 +449,33 @@ static Node* emitPhase(Emitter* emi, Node* who, Errors* err) {
 	return who;
 }
 void emitRuleset(Emitter* emi) {
-	emitLine(emi, "bool " RULESET_FORMAT "() {", RULESET_FORMAT_ARGS);
-	emitIndent(emi);
-	for (int i = 1; i < emi->rule_idx; ++i) {
-		emitLine(emi, "if (" RULENAME_FORMAT "()) return true;", emi->element_name.len, emi->element_name.str, emi->ruleset_idx, i);
+	if (emi->rule_idx > 1) {
+		emitLine(emi, "bool " RULESET_FORMAT "() {", RULESET_FORMAT_ARGS);
+		emitIndent(emi);
+		for (int i = 1; i < emi->rule_idx; ++i) {
+			emitLine(emi, "if (" RULENAME_FORMAT "()) return true;", emi->element_name.len, emi->element_name.str, emi->ruleset_idx, i);
+		}
+		emitLine(emi, "return false;");
+		emitUnindent(emi);
+		emitLine(emi, "}");
+		emi->ruleset_idx += 1;
 	}
-	emitLine(emi, "return false;");
-	emitUnindent(emi);
-	emitLine(emi, "}");
-
-	emi->ruleset_idx += 1;
+	
 	emi->rule_idx = 0;
 }
 void emitElement(Emitter* emi, Node* who) {
 	/* Rulesets */
-	emitLine(emi, "void " RULEELEMENT_FORMAT "() {", RULEELEMENT_FORMAT_ARGS);
-	emitIndent(emi);
-	for (int i = 1; i < emi->ruleset_idx; ++i) {
-		emitLine(emi, "if (" RULESET_FORMAT "()) return;", emi->element_name.len, emi->element_name.str, i);
+	if (emi->ruleset_idx > 1) {
+		emitLine(emi, "void " RULEELEMENT_FORMAT "() {", RULEELEMENT_FORMAT_ARGS);
+		emitIndent(emi);
+		for (int i = 1; i < emi->ruleset_idx; ++i) {
+			emitLine(emi, "if (" RULESET_FORMAT "()) return;", emi->element_name.len, emi->element_name.str, i);
+		}
+		emitUnindent(emi);
+		emitLine(emi, "}");
+	} else {
+		emitLine(emi, "void " RULEELEMENT_FORMAT "() { /* Does nothing */ }", RULEELEMENT_FORMAT_ARGS);
 	}
-	emitUnindent(emi);
-	emitLine(emi, "}");
 	emi->ruleset_idx = 0;
 
 	/* Default getColor */
@@ -648,8 +654,8 @@ static void emitNode(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err, Pr
 
 	if (who) {
 		if (who->kid) emitNode(emi_decl, emi, who->kid, err, info);
-		if (who->type == Node_rules && emi->rule_idx > 1) emitRuleset(emi);
-		if (who->type == Node_element && emi->ruleset_idx > 1) emitElement(emi, who);
+		if (who->type == Node_rules) emitRuleset(emi);
+		if (who->type == Node_element) emitElement(emi, who);
 		if (next) emitNode(emi_decl, emi, next, err, info);
 	}
 }

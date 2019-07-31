@@ -34,6 +34,8 @@ static String current_project;
 static StringRange hack_project_name;
 static Bunch<FileWatcher> files;
 static String splat_concat;
+static Bunch<StringRange> file_ranges;
+static Bunch<StringRange> file_names;
 static Errors err;
 static Emitter emi_decl;
 static Emitter emi_elem;
@@ -114,10 +116,10 @@ static int getFileEntry(StringRange pathfile, StringRange project_name) {
 	return file_idx;
 }
 
-Node* compile(const char* code_start, const char* code_end, Emitter* emi_decl, Emitter* emi_elem, Errors* err, ProgramInfo* info) {
+Node* compile(const char* code_start, const char* code_end, StringRange* file_ranges, int file_count, Emitter* emi_decl, Emitter* emi_elem, Errors* err, ProgramInfo* info) {
 	*info = ProgramInfo();
 
-	Lexer lex = Lexer(code_start, code_end);
+	Lexer lex = Lexer(code_start, code_end, file_ranges, file_count);
 
 	Token tok;
 	tok.str = "root";
@@ -180,7 +182,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 
 	//gui::PushStyleColor(ImGuiCol_WindowBg, vec4(vec3(0.0f), 1.0f));
 	if (gui::Begin("Compiler Output")) {
-		printErrors(&err);
+		printErrors(&err, file_names.ptr, file_ranges.ptr, file_ranges.count);
 	} gui::End();
 	//gui::PopStyleColor();
 
@@ -218,6 +220,8 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	
 	if (file_change || project_change || force_recompile) {
 		splat_concat.clear();
+		file_ranges.clear();
+		file_names.clear();
 		for (int i = 0; i < files.count; ++i) {
 			if (((files[i].project_name.range() == current_project.range()) || (files[i].project_name.range() == StringRange("stdlib"))) && !(files[i].file_name == StringRange("init.gpulam"))) {
 				char* cleaned = (char*)malloc(files[i].raw_text.len + 1);
@@ -230,8 +234,12 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 				// although compiler takes start, end, the string MUST be null terminated!
 				// this is because strtol is used internally, and that uses null term to do it's thing
 				*w = 0;
+				file_names.push(files[i].file_name);
+				StringRange& file_range = file_ranges.push();
+				file_range.str = splat_concat.str + splat_concat.len;
 				splat_concat.append(StringRange(cleaned, w-cleaned));
 				splat_concat.append("\n");
+				file_range.len = (splat_concat.str + splat_concat.len) - file_range.str;
 			}
 		}
 		err = Errors();
@@ -241,7 +249,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		emi_elem = Emitter();
 
 		if (root) freeNode(root);
-		root = compile(splat_concat.str, splat_concat.str + splat_concat.len, &emi_decl, &emi_elem, &err, info);
+		root = compile(splat_concat.str, splat_concat.str + splat_concat.len, file_ranges.ptr, file_ranges.count, &emi_decl, &emi_elem, &err, info);
 
 		emi_elem.code.append("\n");
 		bool init_exists = false;

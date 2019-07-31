@@ -79,6 +79,20 @@ void eatSPLATComment(Lexer* z) {
 		}
 	}
 }
+static void incrementLine(Lexer* z) {
+	z->line_num += 1;
+	if (z->file_count > 0) {
+		while (z->file_idx < z->file_count) {
+			StringRange r = z->file_ranges[z->file_idx];
+			if ((z->at - r.str) >= (int)r.len) {
+				z->line_num = 1;
+				z->file_idx += 1;
+			} else {
+				break;
+			}
+		}
+	}
+}
 Token lexSpatialForm(Lexer* z, Errors* err) {
 	Token t = { };
 	t.line_num = z->line_num;
@@ -101,7 +115,7 @@ Token lexSpatialForm(Lexer* z, Errors* err) {
 			} else if (isEndOfLine(z->at[0])) {
 				z->at += 1;
 				z->line_start = z->at;
-				z->line_num += 1;
+				incrementLine(z);
 				idx.x = 0;
 				idx.y += 1;
 				break;
@@ -194,7 +208,7 @@ Token lexToken(Lexer* z, Errors* err) {
 		t.type = Token_newline;
 		z->at += 1;
 		z->line_start = z->at;
-		z->line_num += 1;
+		incrementLine(z);
 	} break;
 
 	case '#':  

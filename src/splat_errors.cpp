@@ -70,16 +70,25 @@ void printNode(Node* who, int depth) {
 	if (who->sib) printNode(who->sib, depth);
 }
 
-void printErrors(Errors* err) {
+void printErrors(Errors* err, StringRange* file_names, StringRange* file_ranges, int file_count) {
 	if (err->errors.count == 0) {
 		gui::Text("Parsing complete.");
 		return;
 	}
 	for (ParserError* e = err->errors.ptr; e != err->errors.end(); ++e) {
+		int file_idx = 0;
+		while (file_idx < file_count) {
+			StringRange r = file_ranges[file_idx];
+			if ((e->tok.str - r.str) >= (int)r.len) {
+				file_idx += 1;
+			} else {
+				break;
+			}
+		}
 		gui::PushStyleVar(ImGuiStyleVar_ItemSpacing, vec2(0.f, gui::GetStyle().ItemSpacing.y));
 		gui::TextColored(COLOR_ERROR, "ERROR "); gui::SameLine();
 		gui::Text("in "); gui::SameLine();
-		gui::TextColored(COLOR_ERROR, "'%s' ", "test.splat"); gui::SameLine();
+		gui::TextColored(COLOR_ERROR, "'%.*s' ", file_names[file_idx].len, file_names[file_idx].str); gui::SameLine();
 		if (e->show_diagram) {
 			gui::Text("diagram after "); gui::SameLine();
 			gui::TextColored(COLOR_ERROR, "line %d: ", e->tok.line_num); gui::SameLine();

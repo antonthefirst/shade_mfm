@@ -138,11 +138,17 @@ struct Lexer {
 	const char* at;
 	const char* end;
 	const char* line_start;
+	StringRange* file_ranges;
+	int file_count;
+	int file_idx;
 	int line_num;
 	int brace_depth;
-	Lexer(const char* str_start, const char* str_end) {
+	Lexer(const char* str_start, const char* str_end, StringRange* file_ranges_in = NULL, int file_count_in = 0) {
 		at = line_start = str_start;
 		end = str_end;
+		file_ranges = file_ranges_in;
+		file_count = file_count_in;
+		file_idx = 0;
 		line_num = 1;
 		brace_depth = 0;
 	}
@@ -219,7 +225,7 @@ struct Errors {
 };
 
 void printNode(Node* who, int depth = 0);
-void printErrors(Errors* err);
+void printErrors(Errors* err, StringRange* file_names, StringRange* file_ranges, int file_count);
 void printCode(StringRange code);
 
 
