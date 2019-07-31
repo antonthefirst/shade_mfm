@@ -5,6 +5,9 @@ https://movablefeastmachine.org/
 
 https://github.com/DaveAckley/MFM
 
+## Hardware Requirements
+OpenGL 4.3 compatible graphics card and drivers.
+
 ## Compiling shade_mfm on Ubuntu 18.04 (should work on 16.04)
 1. Download or clone 
 2. Unzip 
