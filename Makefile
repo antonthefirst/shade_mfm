@@ -1,5 +1,5 @@
 CC:=g++
-CFLAGS:=-Wall -std=c++0x -Wno-unknown-pragmas
+CFLAGS:=-Wall -std=c++0x -Wno-unknown-pragmas -fpermissive
 DEFINES:=-DACKLEYHAX
 SRCS:=$(wildcard core/*.cpp)
 SRCS+=$(wildcard src/*.cpp)
