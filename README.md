@@ -7,6 +7,7 @@ https://github.com/DaveAckley/MFM
 
 ## Videos
 1. UI Basics: https://www.youtube.com/watch?v=tGccSJQMoGk
+2. Programming: https://www.youtube.com/watch?v=PMUYluE6QLo
 
 ## System Requirements
 OpenGL 4.3 compatible graphics card and drivers.
