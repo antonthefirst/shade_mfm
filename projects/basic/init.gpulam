@@ -1,17 +1,14 @@
-void Init(Int x, Int y, Int w, Int h) {
+void Init(C2D c, S2D s) {
 	Atom S = new(Empty);
 
 	if (random_oneIn(100)) {
-		S = new(DReg); // dreg not ready yet
+		S = new(DReg);
 	} else if (random_oneIn(10)) {
 		S = new(Res);
 	}
 
-	if (x == w/2 && y == h/2)
+	if (c == s/2)
 		S = new(FriendlyForkBomb);
-
-	//if (x == w/4 && y == h/4)
-	//	S = new(ForkBomb);
 
 	ew(0, S); 
 }

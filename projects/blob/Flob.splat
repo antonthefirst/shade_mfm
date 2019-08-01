@@ -1,0 +1,31 @@
+=element Flob
+\symbol F
+\color #1af
+\symmetries all
+
+==Data
+Unsigned(7) eaten
+
+==Rules
+
+
+given b isa Blob {
+	return random_oneIn(10);
+}
+
+change x {
+	ew(_cursn, new(Empty));
+	eaten_add(1);
+	#define NUM_TO_BURST 4
+	if (eaten_get() == NUM_TO_BURST) {
+		for (Int i = 0; i < NUM_TO_BURST; ++i) {
+			ew(i, new(Blob));
+		}
+	}
+}
+
+ b@ -> x@
+
+ _@ -> @_
+ 
+ @ -> @

@@ -261,6 +261,7 @@
     <None Include="projects\anton_testing\init.gpulam" />
     <None Include="projects\anton_testing\inject.splat" />
     <None Include="projects\anton_testing\test.splat" />
+    <None Include="projects\basic\init.gpulam" />
     <None Include="projects\predator_prey\Animal.splat" />
     <None Include="projects\predator_prey\init.gpulam" />
     <None Include="projects\predator_prey\Plant.splat" />

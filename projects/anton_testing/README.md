@@ -1,0 +1,1 @@
+These are random test cases for actual shade_mfm development. Don't bother looking here unless you're extra curious :) The code is likely buggy (on purpose) or ugly (for quick hacking).

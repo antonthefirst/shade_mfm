@@ -118,17 +118,20 @@ static const char* findBracesEnd(Node* who) {
 	assert(false); // we are assuming matching braces at this point
 	return 0;
 }
-void emitBlock(Emitter* emi, Node* who) {
-	if (!who->kid) return; // empty
-	int file_idx = findFileIdx(emi->file_ranges, emi->file_count, who->tok.str);
+void emitDirectiveLine(Emitter* emi, Token tok) {
+	int file_idx = findFileIdx(emi->file_ranges, emi->file_count, tok.str);
 #ifdef _WIN32
 	StringRange file_name = emi->file_names[file_idx];
-	emitLine(emi, "/* Injected from file %.*s line %d */", file_name.len, file_name.str, who->tok.line_num);
-	emitLine(emi, "#line %d \"%.*s\"", who->tok.line_num+1, file_name.len, file_name.str);
+	emitLine(emi, "/* Injected from file %.*s line %d */", file_name.len, file_name.str, tok.line_num);
+	emitLine(emi, "#line %d \"%.*s\"", tok.line_num+1, file_name.len, file_name.str);
 #else
-	emitLine(emi, "/* Injected from file %d line %d */", file_idx, who->tok.line_num);
-	emitLine(emi, "#line %d %d", who->tok.line_num+1, file_idx);
+	emitLine(emi, "/* Injected from file %d line %d */", file_idx, tok.line_num);
+	emitLine(emi, "#line %d %d", tok.line_num+1, file_idx);
 #endif
+}
+void emitBlock(Emitter* emi, Node* who) {
+	if (!who->kid) return; // empty
+	emitDirectiveLine(emi, who->tok);
 	const char* block_end = findBracesEnd(who->kid);
 	const char* block_start = who->tok.str; // start out sitting on the brace, since the kid's start ignore leading whitespace and indentation
 	while (block_start[0] == '{' || isEndOfLine(block_start[0])) block_start += 1;
@@ -182,7 +185,7 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	for (int i = 0; i < ARRSIZE(Emitter::given); ++i) {
 		if (emi->lhs_used[i]) {
 			if (emi->given[i].block || emi->given[i].expression) {
-				emitLine(emi, RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() {", RULENAME_FORMAT_ARGS, i);
+				emitLine(emi, "bool " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() {", RULENAME_FORMAT_ARGS, i);
 				if (emi->given[i].block)
 					emitBlock(emi, emi->given[i].block);
 				else
@@ -487,7 +490,7 @@ void emitElement(Emitter* emi, Node* who) {
 	emi->ruleset_idx = 0;
 
 	/* Default getColor */
-	u32 color = 0xffffffff;
+	u32 color = 0xff00ffff;
 	{
 		Node* kid = who->kid;
 		while (kid) {
@@ -610,6 +613,8 @@ static void elementStart(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err
 	/* Write header */
 	emitHeader(emi, 2, '=', '|', StringRange(who->tok.str, who->tok.len)); 
 	emitLine(emi, "");
+
+	emitDirectiveLine(emi, who->tok);
 
 	/* Write out the accessors */
 	if (emi->data.count > NUM_INTERNAL_DATA_MEMBERS) {

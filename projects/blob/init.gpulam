@@ -1,0 +1,8 @@
+void Init(C2D c, S2D s) {
+	Atom S = new(Empty);
+	
+	if (c == s/2)
+		S = new(Blob);
+
+	ew(0, S); 
+}

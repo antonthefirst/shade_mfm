@@ -49,6 +49,12 @@ int main(int, char**)
 	init.pos_x = 0.4f;
 	init.pos_y = 0.1f;
 	init.fullscreen = false;
+#elif MODE==5 // video capture
+	init.res_x = 1920;
+	init.res_y = 1080;
+	init.pos_x = 0.0f;
+	init.pos_y = 0.0f;
+	init.fullscreen = false;
 #endif
 
 	init.title = "shade_mfm";

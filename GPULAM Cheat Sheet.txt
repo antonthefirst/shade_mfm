@@ -1,0 +1,66 @@
+### GUI Controls
+
+Left Mouse Button - Click to pin/unpin which site is being monitored in Inspector
+
+Right Mouse Button - Hold to drag world around
+
+Mouse Wheel - Zoom In/Out
+
+Mouse Wheel Button - Toggle between "overview zoom" and "Last zoom set by wheel"
+
+
+### Data Types
+
+Unsigned(bitsize) - an unsigned integer with bitsize bits, range [0,2^bitsize-1]
+
+Int(bitsize) - a signed 2's complement integer with bitsize bits, range [-2^(bitsize-1), +2^(bitsize-1)-1]
+
+
+### Language Functions
+
+Bool is(Atom A, AtomType T) - check if atom A is of type T
+
+
+### EventWindow
+
+Atom ew(SiteNum N) - get atom at site N
+
+Atom ew(C2D C) - get atom at coordinate C
+
+void ew(siteNum N, Atom A) - set site N to atom A
+
+void ew(C2D C, Atom A) - set site at coordinate C to atom A
+
+void ew_swap(SiteNum N0, siteNum N1) - swap sites N0 and N1
+
+void ew_swap(C2D C0, C2D C1) - swap sites at coordinates C0 and C1
+
+bool ew_isLive(C2D C) - is site at coordinate C live
+
+bool ew_isLive(SiteNum N) - is site N live
+
+bool ew_isEmpty(C2D c) - is site at coordinate C empty (note that this also returns true for non-live sites)
+
+bool ew_isEmpty(SiteNum N) - is site N empty (note that this also returns true for non-live sites)
+
+C2D  ew_getCoordRaw(SiteNum i) - get coordinate of a site without symmetry applied
+
+C2D  ew_mapSym(C2D idx) - apply symmetry to a coordinate
+
+C2D  ew_mapSym(SiteNum i) - apply symmetry to the coordinate of a site
+
+void ew_changeSymmetry(Symmetry S) - change symmetry to one of the Symmetry constants
+
+Symmetry ew_getSymmetry() - get current active symmetry
+
+
+### ColorUtils
+
+ARGB cu_color(Byte R, Byte G, Byte B) - create a color from R, G, and B, range [0,255]
+
+ARGB cu_color(Unsigned H) - create a color from a 32-bit hex value H, (form 0xAARRGGBB)
+
+
+### Math
+
+Unsigned taxilen(C2D C) - compute manhattan length of coordinate C

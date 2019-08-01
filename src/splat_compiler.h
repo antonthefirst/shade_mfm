@@ -15,7 +15,10 @@ struct ElementInfo {
 
 struct ProgramInfo {
 	Bunch<ElementInfo> elems;
+	s64 time_to_lex;
+	s64 time_to_parse;
+	s64 time_to_emit;
 };
 
 void checkForSplatProgramChanges(bool* file_change, bool* project_change, ProgramInfo* info);
-void showSplatCompilerErrors(StringRange glsl_err);
+void showSplatCompilerErrors(ProgramInfo* info, StringRange glsl_err, float glsl_time_to_compile);

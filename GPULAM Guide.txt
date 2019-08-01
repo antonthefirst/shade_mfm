@@ -1,0 +1,123 @@
+# A Quick-Start guide to programming GPUlam
+
+## The Basics:
+1. Atom files live in the atoms/ directory, and must end with the ".gpulam" extension. All atom files in the atoms/ directory will be loaded in dynamically at runtime
+2. When you press the Reset button in the UI, the reset.comp shader will be triggered, from the shaders/ directory. This is currently the only way to "add" things to the simulation. Copy paste stuff in there to put your new atom in. I'm working on making this smoother.
+
+
+## Some Background:
+GPULam is basically a thin veneer over GLSL (OpenGL Shading Language). GLSL is a C-style language, which doesn't have classes, inheritance, or any other common C++ features, so it's best to think of GPULam as a "C-style relative of Ulam", rather than a direct descendant. I may make a transpiler directly from Ulam in the future, but that's a ways off. So to maintain sanity, it's best to adopt a C mindset when programming GPULam :)
+
+
+## Getting Started:
+The easiest way to get started is to look at the existing atoms, and compare them to Ulam original atoms. This will make the differences and similarities obvious and let you hit the ground running. Be warned though, if you don't see the functionality used in any atoms, it probably doesn't exist yet :) Here is how basic concepts from Ulam translate to GPUlam:
+
+
+## Event Window Access:
+
+In Ulam, the pattern is to have an EventWindow singleton named ew, and then use brackets [] to get and set sites.
+In GPULam, since there are no classes, the event window is accessed by the function ew(). 
+This function handles symmetry in the same way as the Ulam counterpart, namely doing it behind your back.
+For brevity, the function ew() serves both as a "getter" and a "setter".
+The getter form is: ew(SiteNum n), this retrieves the atom at site 'n'
+The setter form is: ew(SiteNum n, Atom a), this sets the site 'n' to atom 'a'
+There is also an ew_swap(SiteNum n, SiteNum m) function.
+
+
+## Classes:
+
+Each gpulam atom needs to declare it's "class" as part of a structured comment, like so:
+/* GPULAM
+  \class DReg
+*/
+The \class can be inside the Ulam structured comment, but by convention I've been putting it in it's own block to keep it separate.
+The class name must match the _behave and _color functions, and both of those must be defined in the file. The safest thing to do right now is copy paste an existing file and then replace all instances of the class name with your one.
+
+## Types:
+
+In Ulam, to check the type of an atom you use the 'is' keyword.
+In GPULam, you use the is() function, for example is(ew(1), DReg). Note that the is() function takes an Atom, not a SiteNum.
+There are no strict types in GPUlam, so there is no 'as' keyword. As you'll see later data member access is raw and unchecked, so use the "honor system" and check the type before accessing it's members.
+
+
+## Data Members:
+
+In Ulam, data members are declared Java/C++ style, as part of the class.
+In shade_mfm SPLAT, data members are parsed out of the ==Data section
+
+=element Animal
+...
+==Data
+Unsigned(7) hunger
+
+These are parsed by shade_mfm and generate a variety of data access functions (to basically pack/unpack those members into the atom bits)
+In Ulam, you would access the above member like:
+
+  hunger += 5;   // if you are the active site
+  Animal A = (ew[1] as Animal)
+  A.hunger += 5; // if you are operating on another site
+
+In GPULam the equivalent is:
+
+  hunger_add(5);             // add 5 to hunger at this site
+  if (is(ew(1), Animal))     // check if the other site is what we expect
+    Animal_hunger_add(1, 5); // add 5 to presumed Animal at site 1
+
+Note that something like this won't work in GPULam:
+
+  Animal A = ew(1);
+
+This is because 'Animal' isn't a proper languge struct, it's just a bound to a type integer.
+Also this won't work either:
+
+  Atom A = ew(1);
+  A.hunger += 5;
+
+Because Atom is just a bunch of bits, and there are no methods in C.
+This also won't work:
+
+  Atom A = ew(1);
+  hunger_add(A, 1);
+
+I COULD make it work, but it won't do what you expect: it would add 5 to the hunger of A, but not to the Atom at site 1. There are no "references" in GPUlam, hence if you want any permanent change you need to "refer" to sites by index.
+A good mental model, to a first approximation, is to replace any '.' in Ulam with '_' in GPUlam. That should get you close to the right syntax.
+These are the globally available data accessors, for each atom class, from any other atom class (gpulam file):
+
+MyClass_myData_get(SiteNum n);
+MyClass_myData_get(); // implicit SiteNum 0
+MyClass_myData_set(SiteNum n, Unsigned v);
+MyClass_myData_set(Unsigned v); // implicit SiteNum 0
+
+Within the atom class itself (and only there), there are extra convenience functions defined, to make it closer to feeling like proper Ulam.
+
+myData_get(SiteNum n);
+myData_get();
+myData_set(SiteNum n, Unsigned v);
+myData_set(Unsigned v);
+
+Which just mimic the global versions, but with less typing.
+The arithmetic operators follow the same format, and have add/sub/mul/div implemented:
+
+MyClass_myData_add(SiteNum n, Unsigned v);
+
+Will add 'v' to atom at site 'n', assuming it's MyClass and has myData (GPUlam will not check this for you, and will blindly just do the op into the data bits it expects to represent that datum).
+You do not have to use this _add function, and can instead sidestep it by doing something like:
+
+Unsigned v = MyClass_myData_get(n);
+v += 5;
+MyClass_myData_set(n, v);
+
+However, this has a subtle difference: the _add function will saturate the arithmetic to the min/max ranges allowed by the bitsize of the field, just like Ulam would. Doing arithmetic outside the dedicated arithmetic functions though, will perform it using GPU operations, which will be standard 32 bit signed integers. I would recommend sticking to the dedicated arithmetic functions for now, to avoid trouble. It's unfortunate that they're more verbose, but there is no operator overloading in GLSL, so there is nothing I can do to make this cleaner at the moment.
+The constants MyClass_myData_minof and _maxof also exist, and with the corresponding convenience versions myData_minof/maxof from within the local atom scope.
+
+
+
+#### Known issues
+
+### Performance
+
+When running fields smaller than 512x512, AER may be slower at slow run speeds. For example, AER at run speed 1 on a 128x128 grid may be 10, but at 64 run speed it may be 50. AER is measured regardless of run speed, so this is surprising. The reason for this turns out that GPU's sometimes throttle down their clock, when they aren't running at full load. Thus things get slower at smaller loads, and speed up at higher loads, relatively speaking. There may be options in your GPU driver to enable throttling to save power, and they may or may not affect this.
+
+
+That's it for now! Let me know how it goes :)
+-A

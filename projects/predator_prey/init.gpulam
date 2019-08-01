@@ -1,4 +1,4 @@
-void Init(Int x, Int y, Int w, Int h) {
+void Init(C2D c, S2D s) {
 	Atom S = new(Empty);
 
 	if (random_oneIn(100)) {

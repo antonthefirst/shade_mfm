@@ -418,7 +418,7 @@ static void checkAllFilesForUpdates() {
 			glShaderSource(s.handle, 1, &s.final_text.str, (const GLint*)&final_len);
 
 			glCompileShader(s.handle);
-			s.time_to_compile = time_counter() - t_start;
+			
 
 			/*
 			s.final_text.clear();
@@ -454,6 +454,7 @@ static void checkAllFilesForUpdates() {
 				guiSetErroredFile(s.file_idx);
 				any_errors_since_last_check = true;
 			} 
+			s.time_to_compile = time_counter() - t_start; // do this after Get COMPILE_STATUS because that seems to actually block waiting for compiler to finish
 		}
 	}
 	for (int i = 0; i < (int)prog_entries.size(); ++i) {
@@ -479,7 +480,6 @@ static void checkAllFilesForUpdates() {
 					glAttachShader(new_handle, shader_entries[attach_idxs[i]].handle);
 
 			glLinkProgram(new_handle);
-			p.time_to_link = time_counter() - t_start;
 
 			for (unsigned i = 0; i < sizeof(attach_idxs) / sizeof(attach_idxs[0]); ++i)
 				if (attach_idxs[i] != -1)
@@ -509,6 +509,7 @@ static void checkAllFilesForUpdates() {
 				guiSetErroredProg(i);
 				any_errors_since_last_check = true;
 			}
+			p.time_to_link = time_counter() - t_start; // do this after Get LINK_STATUS because that seems to actually block waiting for compiler to finish
 		}
 	}
 }

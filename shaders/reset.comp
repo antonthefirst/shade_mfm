@@ -36,7 +36,7 @@ void main() {
 			uint tick_counter = dispatch_counter;
 
 			ew(0, new(Empty));
-			Init(site_idx.x, site_idx.y, world_size.x, world_size.y);
+			Init(site_idx, world_size);
 
 			imageStore(img_event_count, site_idx, uvec4(0));
 			imageStore(img_dev, site_idx, uvec4(uint(smix&0xffffffff), uint((smix>>32)&0xffffffff), 0, 0));

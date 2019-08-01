@@ -361,5 +361,8 @@
     <None Include="stdlib\Wall.splat">
       <Filter>stdlib</Filter>
     </None>
+    <None Include="projects\basic\init.gpulam">
+      <Filter>projects\basic</Filter>
+    </None>
   </ItemGroup>
 </Project>

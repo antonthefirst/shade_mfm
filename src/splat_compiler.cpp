@@ -3,6 +3,7 @@
 #include "core/file_stat.h"
 #include "core/log.h"
 #include "core/dir.h"
+#include "core/cpu_timer.h"
 #include "imgui/imgui.h"
 #include <stdlib.h> // for malloc/free
 #include <stdio.h> // for FILE
@@ -20,7 +21,7 @@ struct FileWatcher {
 	StringRange file_name;
 	String project_name;
 	time_t last_modified = 0;
-	bool not_found = false;
+	bool not_found = true;
 	String raw_text;
 	void init(StringRange pathfile, StringRange project_name);
 	void checkForUpdates();
@@ -53,17 +54,21 @@ void FileWatcher::init(StringRange pathfile_in, StringRange project_name_in) {
 	file_name.str = end;
 	file_name.len = (pathfile.str + pathfile.len) - end;
 	last_modified = 0;
-	not_found = false;
+	not_found = true;
 }
 void FileWatcher::checkForUpdates() {
 	// check if file is present and when it was last modified
 	struct FileStats buf;
 	int res = fileStat(pathfile.str, &buf);
 	if (res != 0) {
-		// clear it?
+		if (not_found == false)
+			file_change = true; // if we were found but now aren't, recompile
 		not_found = true;
 		return;
 	}
+
+	not_found = false;
+
 	// if it hasn't been modified since we saw it last, skip it
 	if (last_modified == buf.fs_mtime)
 		return;
@@ -83,7 +88,7 @@ void FileWatcher::checkForUpdates() {
 	// update monitoring variables
 	file_change = true; // signal changes to outer function
 	last_modified = buf.fs_mtime;
-	not_found = false;
+	
 
 	// load file into memory and close it
 	size_t text_len = 0;
@@ -120,6 +125,7 @@ static int getFileEntry(StringRange pathfile, StringRange project_name) {
 Node* compile(const char* code_start, const char* code_end, StringRange* file_ranges, int file_count, Emitter* emi_decl, Emitter* emi_elem, Errors* err, ProgramInfo* info) {
 	*info = ProgramInfo();
 
+	info->time_to_lex = time_counter();
 	Lexer lex = Lexer(code_start, code_end, file_ranges, file_count);
 
 	Token tok;
@@ -131,14 +137,21 @@ Node* compile(const char* code_start, const char* code_end, StringRange* file_ra
 	Node* root = makeNode(Node_braces, tok);
 	while (Node* block = parseGroups(&par, &lex, err))
 		addKid(root, block);
+	info->time_to_lex = time_counter() - info->time_to_lex;
 	
 	if (err->errors.count == 0) {
+		info->time_to_parse = time_counter();
 		if (root->kid)
 			transformAST(root, root->kid, err);
+		info->time_to_parse = time_counter() - info->time_to_parse;
 
 		if (err->errors.count == 0) {
-			emitForwardDeclarationsAndTypes(emi_decl, root, err, info);
-			emitElements(emi_decl, emi_elem, root, err, info);
+			info->time_to_emit = time_counter();
+			if (root->kid) {
+				emitForwardDeclarationsAndTypes(emi_decl, root, err, info);
+				emitElements(emi_decl, emi_elem, root, err, info);
+			}
+			info->time_to_emit = time_counter() - info->time_to_emit;
 		}
 	}
 	return root;
@@ -174,6 +187,14 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	hack_project_name = StringRange("stdlib");
 	dirScan(STDLIB_DIRECTORY, ".splat", splatCallback);
 	dirScan(PROJECTS_DIRECTORY, projectsLoadCallback);
+
+	// check everyone in this project for updates, which includes already existing files, that may have been deleted from the project directory and weren't caught by the above scan
+	for (int i = 0; i < files.count; ++i) {
+		if (((files[i].project_name.range() == current_project.range()) || (files[i].project_name.range() == StringRange("stdlib"))) && !(files[i].file_name == StringRange("init.gpulam"))) {
+			files[i].checkForUpdates();
+		}
+	}
+			
 
 	*file_change_out = file_change;
 	*project_change_out = project_change;
@@ -217,7 +238,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		file_ranges.clear();
 		file_names.clear();
 		for (int i = 0; i < files.count; ++i) {
-			if (((files[i].project_name.range() == current_project.range()) || (files[i].project_name.range() == StringRange("stdlib"))) && !(files[i].file_name == StringRange("init.gpulam"))) {
+			if (!files[i].not_found && ((files[i].project_name.range() == current_project.range()) || (files[i].project_name.range() == StringRange("stdlib"))) && !(files[i].file_name == StringRange("init.gpulam"))) {
 				char* cleaned = (char*)malloc(files[i].raw_text.len + 1);
 				char* w = cleaned;
 				for (const char* r = files[i].raw_text.str; r != (files[i].raw_text.str + files[i].raw_text.len); ++r) {
@@ -266,7 +287,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 			}
 		}
 		if (!init_exists)
-			emi_elem.code.append("void Init(Int x, Int y, Int w, Int h) { return; }\n");
+			emi_elem.code.append("void Init(C2D c, S2D s) { return; }\n");
 
 		if (err.errors.count == 0) {
 			injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
@@ -277,7 +298,7 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 	}
 }
 
-void showSplatCompilerErrors(StringRange glsl_err) {
+void showSplatCompilerErrors(ProgramInfo* info, StringRange glsl_err, float glsl_time_to_compile) {
 	bool any_errors = err.errors.count != 0 || glsl_err.len != 0;
 	show_errors |= any_errors;
 	if (show_errors) {
@@ -295,6 +316,10 @@ void showSplatCompilerErrors(StringRange glsl_err) {
 				if (gui::Button("OK")) {
 					show_errors = false;
 				}
+				gui::Text("Lex time:   %6.3f sec", time_to_sec(info->time_to_lex));
+				gui::Text("Parse time: %6.3f sec", time_to_sec(info->time_to_parse));
+				gui::Text("Emit time:  %6.3f sec", time_to_sec(info->time_to_emit));
+				gui::Text("GLSL time:  %6.3f sec", glsl_time_to_compile);
 			}
 		} gui::End();
 		if (any_errors) {

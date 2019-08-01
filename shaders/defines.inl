@@ -23,6 +23,7 @@
 #define ARGB     uvec4
 
 #define C2D      ivec2
+#define S2D      uvec2
 #define Unsigned uint
 #define Int      int
 #define Byte     uint

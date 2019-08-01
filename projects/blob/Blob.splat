@@ -1,0 +1,16 @@
+=element Blob
+\symbol B
+\color #fa1
+\symmetries all
+
+==Rules
+
+change f isa Flob
+
+ _@_ -> f@_
+
+ _@ -> @@
+ 
+ _@ -> @_
+ 
+ @ -> @

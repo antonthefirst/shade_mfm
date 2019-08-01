@@ -91,6 +91,7 @@ static u32 AER_history_idx = 0;
 static bool show_zero_counts = 0;
 static int inspect_mode = INSPECT_MODE_BASIC;
 static ProgramStats prog_stats;
+static bool dont_reset_when_code_changes = false;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -318,7 +319,7 @@ static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 	update_timer.start("batch");
 	gtimer_start("update");
 
-	if (useProgram("shaders/staged_update_direct.comp")) {
+	if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
 		int event_job_handle = event_job_handles[event_job_write_idx];
 		int command_handle = command_handles[event_job_write_idx];
 		for (int i = 0; i < dispatches_per_batch; ++i) { 
@@ -357,8 +358,8 @@ void mfmTerm() {
 
 }
 
-static bool mfmGPURender(ivec2 world_res) {
-	if (useProgram("shaders/render.comp", &prog_stats)) {
+static bool mfmGPURender(ivec2 world_res, bool get_shader_stats) {
+	if (useProgram("shaders/render.comp", get_shader_stats ? &prog_stats : NULL)) {
 		gtimer_start("render");
 		mfmSetUniforms();
 		glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
@@ -537,14 +538,15 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 		gui::PushItemWidth(100.0f);
 		gui::InputInt("##break_at_step_number", &gui_set.break_at_step_number);
 		gui::PopItemWidth();
-		gui::SameLine();
 		//gui::Text("Current: %5d", dispatch_counter);
 	}
 	else {
-		gui::Checkbox("Break at step...", &gui_set.enable_break_at_step); gui::SameLine();
+		gui::Checkbox("Break at step...", &gui_set.enable_break_at_step); 
 	}
 
 	gui_set.break_at_step_number = max(1, gui_set.break_at_step_number);
+
+	gui::Checkbox("Don't reset when code changes", &dont_reset_when_code_changes);
 
 	gui::NextColumn();
 
@@ -779,6 +781,8 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	
 	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
 	do_reset |= project_change;
+	if (!dont_reset_when_code_changes)
+		do_reset |= file_change;
 
 	if (world_hash_changed) { 
 		camera_from_world = camera_from_world_start = camera_from_world_target = calcOverviewPose(gui_world_res);
@@ -813,7 +817,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		compute_stats_ok = mfmComputeStats(gui_world_res);
 
 		if (update_ok)
-			render_ok = mfmGPURender(gui_world_res);
+			render_ok = mfmGPURender(gui_world_res, dispatch_count == 0); //#HACK get program stats from render if we're not updating, so we get errors even when update hasn't been called. should go away once i merge all shaders into one.
 
 		if (clear_stats_ok && compute_stats_ok)
 			mfmReadStats();
@@ -829,7 +833,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		ctimer_stop();
 	}
 
-	showSplatCompilerErrors(StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0));
+	showSplatCompilerErrors(&prog_info, StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0), prog_stats.time_to_compile + prog_stats.time_to_link);
 
 	if (gui::Begin("Statistics")) {
 		gui::AlignFirstTextHeightToWidgets();
