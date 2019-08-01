@@ -55,6 +55,7 @@ static SiteInfo site_info;
 static int stats_write_idx = 0;
 static ivec2 site_info_idx = ivec2(0);
 static bool hold_site_info_idx = false;
+static bool want_stats = true;
 
 
 // render state
@@ -262,43 +263,44 @@ static void mfmSetUniforms(int stage = 0, GLuint event_job_handle = 0, GLuint co
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, event_job_handle);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, command_handle);
 }
-static bool mfmGPUReset(ivec2 world_res) {
-	if (useProgram("shaders/reset.comp")) {
-		mfmSetUniforms();
-		glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-		glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
-		glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	}
+static void mfmGPUReset(ivec2 world_res) {
+	mfmSetUniforms(STAGE_RESET);
+	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
+	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 	time_of_reset = time_counter();
-	return !checkForShaderErrors();
 }
-static bool mfmComputeStats(ivec2 world_res) {
-	if (useProgram("shaders/stats.comp")) {
-		mfmSetUniforms();
-		gtimer_start("stats");
-		glDispatchCompute((world_res.x / GROUP_SIZE_X) + 1, (world_res.y / GROUP_SIZE_Y) + 1, 1);
-		gtimer_stop();
-		glMemoryBarrier(
-			GL_SHADER_STORAGE_BARRIER_BIT      |
-			GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
-			GL_TEXTURE_FETCH_BARRIER_BIT          // probably not needed
-		);
-	}
-
-	return !checkForShaderErrors();
+static void mfmComputeStats(ivec2 world_res) {
+	mfmSetUniforms(STAGE_COMPUTE_STATS);
+	gtimer_start("stats");
+	glDispatchCompute((world_res.x / GROUP_SIZE_X) + 1, (world_res.y / GROUP_SIZE_Y) + 1, 1);
+	gtimer_stop();
+	glMemoryBarrier(
+		GL_SHADER_STORAGE_BARRIER_BIT      |
+		GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+		GL_TEXTURE_FETCH_BARRIER_BIT          // probably not needed
+	);
 }
-static bool mfmClearStats() {
-	if (useProgram("shaders/clear_stats.comp")) {
-		mfmSetUniforms();
-		gtimer_start("clear stats");
-		glDispatchCompute(1, 1, 1);
-		//glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
-		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
-		gtimer_stop();
-	}
-	return !checkForShaderErrors();
+static void mfmSiteInfo(ivec2 world_res) {
+	mfmSetUniforms(STAGE_SITE_INFO);
+	gtimer_start("site info");
+	glDispatchCompute(1, 1, 1);
+	gtimer_stop();
+	glMemoryBarrier(
+		GL_SHADER_STORAGE_BARRIER_BIT      |
+		GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+		GL_TEXTURE_FETCH_BARRIER_BIT          // probably not needed
+	);
+}
+static void mfmClearStats() {
+	mfmSetUniforms(STAGE_CLEAR_STATS);
+	gtimer_start("clear stats");
+	glDispatchCompute(1, 1, 1);
+	//glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
+	glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
+	gtimer_stop();
 }
 static void mfmReadStats() {
 	gtimer_start("read stats");
@@ -313,26 +315,26 @@ static void mfmReadStats() {
 	stats_write_idx = stats_read_idx;
 	gtimer_stop();
 }
-static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_n_dispatches) {
-	if (dispatches_per_batch == 0) return true;
+static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_n_dispatches) {
+	if (dispatches_per_batch == 0) return;
 	update_timer.reset();
 	update_timer.start("batch");
 	gtimer_start("update");
 
-	if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
+	//if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
 		int event_job_handle = event_job_handles[event_job_write_idx];
 		int command_handle = command_handles[event_job_write_idx];
 		for (int i = 0; i < dispatches_per_batch; ++i) { 
 			if (stop_at_n_dispatches != 0 && dispatch_counter == stop_at_n_dispatches) break;
 
-			mfmSetUniforms(0, event_job_handle, command_handle);
+			mfmSetUniforms(STAGE_VOTE, event_job_handle, command_handle);
 			gtimer_start("vote");
 			glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
 			//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
 			glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
 			gtimer_stop();
 		
-			mfmSetUniforms(1, event_job_handle, command_handle);
+			mfmSetUniforms(STAGE_EVENT, event_job_handle, command_handle);
 			gtimer_start("tick");
 			glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
 			//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
@@ -342,32 +344,20 @@ static bool mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 
 			dispatch_counter++;
 		}
-	}
+	//}
 
 	update_timer.stop();
 	gtimer_stop();
 
-	return !checkForShaderErrors();
 }
 
-
-void mfmInit(float aspect) {
-
-}
-void mfmTerm() {
-
-}
-
-static bool mfmGPURender(ivec2 world_res, bool get_shader_stats) {
-	if (useProgram("shaders/render.comp", get_shader_stats ? &prog_stats : NULL)) {
-		gtimer_start("render");
-		mfmSetUniforms();
-		glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
-		gtimer_stop();
-	}
-	return !checkForShaderErrors();
+static void mfmGPURender(ivec2 world_res) {
+	gtimer_start("render");
+	mfmSetUniforms(STAGE_RENDER);
+	glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
+	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+	gtimer_stop();
 }
 bool mfmDraw(ivec2 screen_res, ivec2 world_res, pose camera_from_world) {
 	gtimer_start("draw");
@@ -627,7 +617,6 @@ void guiAtomInspector(Atom A) {
 void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	ivec2 screen_res = ivec2(app_res_x, app_res_y);
 	
-
 	bool do_reset = false;
 	bool do_step = false;
 
@@ -758,19 +747,6 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		gui::Text("Time:               %3.1f sec", sim_time_since_reset);
 	} gui::End(); 
 
-	/*
-	if (gui::Begin("Site Inspector")) {
-		static int inspect_mode = INSPECT_MODE_BASIC;
-		gui::RadioButton("basic", &inspect_mode, INSPECT_MODE_BASIC); gui::SameLine();
-		gui::RadioButton("full", &inspect_mode, INSPECT_MODE_FULL);
-		gui::Spacing();
-		gui::Text("Site: (%d, %d)", site_info_idx.x, site_info_idx.y);
-		if (inspect_mode == INSPECT_MODE_FULL)
-			gui::Text("dev: %d %d %d %d", site_info.dev.x, site_info.dev.y, site_info.dev.z, site_info.dev.w);
-		guiAtomInspector(site_info.event_layer, inspect_mode);
-	} gui::End();
-	*/
-	
 	drawViewport(0, 0, app_res_x, app_res_y);
 	drawClear(21/255.f, 33/255.f, 54/255.f);
 
@@ -790,14 +766,10 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		overview_state = OVERVIEW_INACTIVE;
 	}
 
-	bool update_ok = dispatch_count == 0; // ok if we don't want to update
-	bool clear_stats_ok = false;
-	bool compute_stats_ok = false;
-	bool render_ok = false;
 	bool draw_ok = false;
 
 	// update loop
-	{
+	if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
 		ctimer_start("update"); 
 
 		if (do_reset) {
@@ -807,34 +779,40 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 			wall_time_since_reset = 0.0;
 		}
 		if (do_reset)
-			reset_ok = mfmGPUReset(gui_world_res);
+			mfmGPUReset(gui_world_res);
 
-		clear_stats_ok = mfmClearStats();
+		//if (want_stats) // need to clear for AER
+			mfmClearStats();
 
-		if (reset_ok)
-			update_ok = mfmGPUUpdate(gui_world_res, dispatch_count, stop_at_n_dispatches);
+		mfmGPUUpdate(gui_world_res, dispatch_count, stop_at_n_dispatches);
 	
-		compute_stats_ok = mfmComputeStats(gui_world_res);
+		if (want_stats)
+			mfmComputeStats(gui_world_res);
 
-		if (update_ok)
-			render_ok = mfmGPURender(gui_world_res, dispatch_count == 0); //#HACK get program stats from render if we're not updating, so we get errors even when update hasn't been called. should go away once i merge all shaders into one.
+		mfmSiteInfo(gui_world_res);
 
-		if (clear_stats_ok && compute_stats_ok)
+		mfmGPURender(gui_world_res);
+
+		//if (want_stats) // need to read for AER
 			mfmReadStats();
 
 		ctimer_stop();
 	}
-	
+
+	open_shader_gui |= checkForShaderErrors();
+
 	// draw loop
 	{
 		ctimer_start("draw");
-		if (render_ok)
-			draw_ok = mfmDraw(screen_res, gui_world_res, camera_from_world);
+		mfmDraw(screen_res, gui_world_res, camera_from_world);
 		ctimer_stop();
 	}
 
+	open_shader_gui |= checkForShaderErrors();
+
 	showSplatCompilerErrors(&prog_info, StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0), prog_stats.time_to_compile + prog_stats.time_to_link);
 
+	want_stats = false;
 	if (gui::Begin("Statistics")) {
 		gui::AlignFirstTextHeightToWidgets();
 		gui::Text("Atom Counts:");
@@ -868,8 +846,8 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 				gui::PopID();
 			}
 		}
-		gui::End();
-	}
+		want_stats = true;
+	} gui::End();
 
 	if (gui::Begin("Site Inspector")) {
 		gui::RadioButton("basic", &inspect_mode, INSPECT_MODE_BASIC); gui::SameLine();
@@ -885,8 +863,6 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		}
 	} gui::End();
 
-	open_shader_gui |= true;
-	open_shader_gui |= !reset_ok || !update_ok || !clear_stats_ok || !compute_stats_ok || !draw_ok || !render_ok;
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
 

@@ -283,19 +283,10 @@
     <None Include="shaders\prng.inl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\reset.comp">
-      <Filter>shaders</Filter>
-    </None>
     <None Include="shaders\sites.inl">
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\uniforms.inl">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\stats.comp">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\render.comp">
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\defines.inl">
@@ -304,13 +295,7 @@
     <None Include="shaders\globals.inl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\clear_stats.comp">
-      <Filter>shaders</Filter>
-    </None>
     <None Include="shaders\staged_update_direct.comp">
-      <Filter>shaders</Filter>
-    </None>
-    <None Include="shaders\staged_update_indirect.comp">
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\xoroshiro128starstar.inl">

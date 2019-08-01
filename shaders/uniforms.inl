@@ -13,7 +13,7 @@ layout(location = 11) uniform int ONE;
 
 
 
-layout(std430, binding = 0)
+layout(std430, binding = 0) coherent 
 buffer Stats 
 {
 	WorldStats stats;

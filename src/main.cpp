@@ -67,7 +67,6 @@ int main(int, char**)
 	appGetState(app_state);
 
 	imguiInit();
-	mfmInit(float(app_state.res_x) / float(app_state.res_y));
 
     while (!appShouldClose())
     {
@@ -107,7 +106,6 @@ int main(int, char**)
 		appSwapBuffers();
 		gtimer_stop();
 	}
-	mfmTerm();
 
 	imguiTerm();
 	appTerm();

@@ -10,6 +10,14 @@ struct uvec4 {
 #define GROUP_SIZE_X 8
 #define GROUP_SIZE_Y 8
 
+#define STAGE_RESET         0
+#define STAGE_CLEAR_STATS   1
+#define STAGE_VOTE          2
+#define STAGE_EVENT         3
+#define STAGE_COMPUTE_STATS 4
+#define STAGE_SITE_INFO     5
+#define STAGE_RENDER        6
+
 #define BITS_PER_COMPONENT 32
 
 #define ATOM_BITS                 96
