@@ -10,23 +10,7 @@
 //include "splitmix32.inl"
 //include "xoroshiro128starstar.inl"
 
-
-bool isActiveMem(ivec2 vote_idx) {
-	uint center_v = imageLoad(img_vote, vote_idx).x;
-	const int R = EVENT_WINDOW_RADIUS*2;
-    for (int y = -R; y <= R; ++y) {
-        for (int x = -R; x <= R; ++x) {
-            int m = abs(x) + abs(y);
-            if (m <= R && !(x == 0 && y == 0)) {
-				uint v = imageLoad(img_vote, vote_idx + ivec2(x,y)).x;
-                if (v >= center_v) {
-                    return false;
-                }
-            }
-        }
-    }
-	return true;
-}
+bool isActiveMem(ivec2 vote_idx);
 
 void main() {
 	if (stage == STAGE_RESET) {
@@ -180,4 +164,169 @@ void main() {
 			imageStore(img_color, ivec2(center_idx.x, size.y - 1 - center_idx.y), col); //#Y-DOWN
 		}
 	}
+}
+
+// #OPT if the const R is replaced by a uniform to prevent unroll, this goes ~40% slower, and compile times are unaffected :( 
+bool isActiveMem(ivec2 vote_idx) {
+	uint center_v = imageLoad(img_vote, vote_idx).x;
+#if 0
+	const int R = EVENT_WINDOW_RADIUS*2;
+    for (int y = -R; y <= R; ++y) {
+        for (int x = -R; x <= R; ++x) {
+            int m = abs(x) + abs(y);
+            if (m <= R && !(x == 0 && y == 0)) {
+				uint v = imageLoad(img_vote, vote_idx + ivec2(x,y)).x;
+                if (v >= center_v) {
+                    return false;
+                }
+            }
+        }
+    }
+#else // #OPT generated minimal version of the above code, 24% faster. bizarrely, this is faster than "spiral from center" ordering by nearly 24% on 4k grids (seems to be identical on 128 grids) 
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-8)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-8,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+8,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+8)).x >= center_v) return false;
+#endif
+	return true;
 }

@@ -38,10 +38,6 @@ static GLuint dev_img = 0;
 static GLuint vote_img = 0;
 static GLuint event_count_img = 0;
 static GLuint prng_state_img = 0;
-static GLuint event_job_handles[2];
-static GLuint command_handles[2];
-static int event_job_write_idx = 0;
-static int event_job_count_max = 0;
 static u32 dispatch_counter = 0;
 static bool reset_ok = false;
 static ProgramInfo prog_info;
@@ -71,7 +67,6 @@ static pose camera_from_world_start = identity();
 static pose camera_from_world_target = identity();
 
 // gui state
-static ivec2 gui_world_res_prev = ivec2(0); // needs to be 0 to trigger first frame reset
 static ivec2 gui_world_res = ivec2(256);
 static int gui_res_option = 7;
 static GPUTimer update_timer;
@@ -145,19 +140,14 @@ static void texParamsClampToZeroAndNearest() {
 static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 	ivec2 req_vote_res = req_world_res + ivec2(EVENT_WINDOW_RADIUS * 2 * 2); // edges need to see R*2 off the edge, on each border
 
+	
 	if (site_bits_img == 0) glGenTextures(1, &site_bits_img);
 	if (color_img == 0) glGenTextures(1, &color_img);
 	if (dev_img == 0) glGenTextures(1, &dev_img);
 	if (vote_img == 0) glGenTextures(1, &vote_img);
 	if (event_count_img == 0) glGenTextures(1, &event_count_img);
 	if (prng_state_img == 0) glGenTextures(1, &prng_state_img);
-
-	for (unsigned i = 0; i < ARRSIZE(event_job_handles); ++i) 
-		if (event_job_handles[i] == 0)
-			glGenBuffers(1, &event_job_handles[i]);
-	for (unsigned i = 0; i < ARRSIZE(command_handles); ++i) 
-		if (command_handles[i] == 0)
-			glGenBuffers(1, &command_handles[i]);
+	
 
 	if (world_res != req_world_res) {
 		glBindTexture(GL_TEXTURE_2D, site_bits_img);
@@ -190,27 +180,6 @@ static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 		glTexImage2D(GL_TEXTURE_2D, 0, PRNG_STATE_FORMAT, req_vote_res.x, req_vote_res.y, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, NULL);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
-
-		event_job_count_max = int(floor(double(req_world_res.x * req_world_res.y) * 0.008)); // seems to be about 0.007 on avg
-		for (unsigned i = 0; i < ARRSIZE(event_job_handles); ++i) {
-			glBindBuffer(GL_ARRAY_BUFFER, event_job_handles[i]);
-			glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(event_job_count_max * sizeof(EventJob)), 0, GL_DYNAMIC_DRAW);
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-		}
-
-		// replace with GL_DISPATCH_INDIRECT_BUFFER
-		IndirectCommand command;
-		command.firstIndex = 0;
-		command.count = 6;
-		command.primCount = 0; 
-		command.baseVertex = 0;
-		command.baseInstance = 0;
-		for (unsigned i = 0; i < ARRSIZE(command_handles); ++i) { 
-			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, command_handles[i]);
-			glBufferData(GL_DRAW_INDIRECT_BUFFER, sizeof(IndirectCommand), &command, GL_DYNAMIC_DRAW);
-			glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
-		}
-
 		world_res = req_world_res;
 		vote_res = req_vote_res;
 		return true;
@@ -239,7 +208,7 @@ static void initStatsIfNeeded() {
 		}
 	}
 }
-static void mfmSetUniforms(int stage = 0, GLuint event_job_handle = 0, GLuint command_handle = 0) {
+static void mfmSetUniforms(int stage = 0) {
 	glBindImageTexture(0, site_bits_img, 0, GL_FALSE, 0, GL_READ_WRITE, SITE_FORMAT);
 	glUniform1i(0, 0);
 	glBindImageTexture(1, color_img, 0, GL_FALSE, 0, GL_WRITE_ONLY, COLOR_FORMAT);
@@ -255,13 +224,11 @@ static void mfmSetUniforms(int stage = 0, GLuint event_job_handle = 0, GLuint co
 	glUniform1ui(6, dispatch_counter);
 	glUniform2i(7, site_info_idx.x, site_info_idx.y);
 	glUniform1i(8, stage);
-	glUniform1ui(9, event_job_count_max);
 	glUniform1i(10, 0); // hacky constants to prevent gpu loop unrolling
 	glUniform1i(11, 1);
+	glUniform1i(12, EVENT_WINDOW_RADIUS*2);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, stats_handles[stats_write_idx]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, site_info_handles[stats_write_idx]);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, event_job_handle);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, command_handle);
 }
 static void mfmGPUReset(ivec2 world_res) {
 	mfmSetUniforms(STAGE_RESET);
@@ -321,30 +288,26 @@ static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 	update_timer.start("batch");
 	gtimer_start("update");
 
-	//if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
-		int event_job_handle = event_job_handles[event_job_write_idx];
-		int command_handle = command_handles[event_job_write_idx];
-		for (int i = 0; i < dispatches_per_batch; ++i) { 
-			if (stop_at_n_dispatches != 0 && dispatch_counter == stop_at_n_dispatches) break;
+	for (int i = 0; i < dispatches_per_batch; ++i) { 
+		if (stop_at_n_dispatches != 0 && dispatch_counter == stop_at_n_dispatches) break;
 
-			mfmSetUniforms(STAGE_VOTE, event_job_handle, command_handle);
-			gtimer_start("vote");
-			glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
-			//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
-			glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
-			gtimer_stop();
+		mfmSetUniforms(STAGE_VOTE);
+		gtimer_start("vote");
+		glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
+		//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
+		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
+		gtimer_stop();
 		
-			mfmSetUniforms(STAGE_EVENT, event_job_handle, command_handle);
-			gtimer_start("tick");
-			glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
-			//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
-			//glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // opt, get ready to render
-			glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
-			gtimer_stop();
+		mfmSetUniforms(STAGE_EVENT);
+		gtimer_start("tick");
+		glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
+		//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
+		//glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // opt, get ready to render
+		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
+		gtimer_stop();
 
-			dispatch_counter++;
-		}
-	//}
+		dispatch_counter++;
+	}
 
 	update_timer.stop();
 	gtimer_stop();
@@ -451,7 +414,7 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 	size_change |= gui::RadioButton("1024x1024 ", &gui_set.size_option, 10); gui::SameLine();
 	size_change |= gui::RadioButton("2048x2048 ", &gui_set.size_option, 11); gui::SameLine();
 	size_change |= gui::RadioButton("4096x4096 ", &gui_set.size_option, 12); gui::SameLine();
-	size_change |= gui::RadioButton("16384x8192", &gui_set.size_option, 14);
+	size_change |= gui::RadioButton("8192x8192 ", &gui_set.size_option, 13); 
 	size_change |= gui::RadioButton("Custom:",     &gui_set.size_option, 0); gui::SameLine();
 	size_change |= gui::InputInt2("##size_custom", (int*)&gui_set.size_custom);
 	if (gui_set.size_option != 0) {
@@ -460,8 +423,7 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 	else {
 		if (gui_set.size_custom.x > 0 && gui_set.size_custom.y > 0)
 			*size_request = gui_set.size_custom;
-	}
-	size_request->y = min(size_request->y, 8192);
+	} 
 
 	if (size_change) {
 		//*run = false;
@@ -521,7 +483,8 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 	gui::RadioButton("32 ",  &gui_set.run_speed, 32); gui::SameLine();
 	gui::RadioButton("64 ",  &gui_set.run_speed, 64); gui::SameLine();
 	gui::RadioButton("128", &gui_set.run_speed, 128); gui::SameLine();
-	gui::RadioButton("256", &gui_set.run_speed, 256);
+	gui::RadioButton("256", &gui_set.run_speed, 256); gui::SameLine();
+	gui::RadioButton("512", &gui_set.run_speed, 512);
 
 	if (gui_set.enable_break_at_step) {
 		gui::Checkbox("Break at step number:", &gui_set.enable_break_at_step); gui::SameLine();
@@ -613,6 +576,7 @@ void guiAtomInspector(Atom A) {
 		}
 	}
 }
+
 
 void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	ivec2 screen_res = ivec2(app_res_x, app_res_y);
@@ -725,9 +689,6 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		memset(AER_history, 0, sizeof(AER_history));
 	if (run)
 		AER_history[(AER_history_idx++)%ARRSIZE(AER_history)] = AER;
-	
-	if (gui_world_res != gui_world_res_prev)
-		do_reset = true;
 
 	int stop_at_n_dispatches = gui_set.enable_break_at_step ? gui_set.break_at_step_number : 0;
 
@@ -764,6 +725,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		camera_from_world = camera_from_world_start = camera_from_world_target = calcOverviewPose(gui_world_res);
 		scale_before_zoomout = scaleof(camera_from_world);
 		overview_state = OVERVIEW_INACTIVE;
+		do_reset = true;
 	}
 
 	bool draw_ok = false;
@@ -865,7 +827,4 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
-
-	gui_world_res_prev = gui_world_res;
 }
-

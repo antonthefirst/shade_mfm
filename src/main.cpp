@@ -8,6 +8,7 @@
 #include "core/cpu_timer.h"
 #include "timers.h"
 #include "core/shader_loader.h"
+#include "core/gl_message_log.h"
 
 void mfmInit(float aspect);
 void mfmTerm();
@@ -61,6 +62,7 @@ int main(int, char**)
 
 	ret = appInit(init);
 	if (ret) return ret;
+	glMessageLogInit();
 
 	Input in;
 	AppState app_state;
@@ -92,6 +94,7 @@ int main(int, char**)
 		gtimer_stop();
 		gtimer_reset();
 		timerUI(in);
+		glMessageLogUI();
 		gtimer_start("frame");
 		gtimer_start("gui");
 		imguiRender();

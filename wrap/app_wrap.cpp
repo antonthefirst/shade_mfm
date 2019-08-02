@@ -1,6 +1,5 @@
 #include "app_wrap.h"
 #include "core/log.h"
-#include "core/shader_loader.h"
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -9,62 +8,12 @@
 GLFWwindow* gWindow;
 #define SYS_GLFW " GLFW "
 #define SYS_GL3W " gl3w "
-#define SYS_GL   "OpenGL"
 
 #define GL_INFO_FILENAME "gl_info.txt"
-
-// GL Debug callbacks aren't working for me for some reason...
-//#define ENABLE_GL_DEBUG_CALLBACK
 
 static void error_callback(int error, const char* description) {
 	logError(SYS_GLFW, error, description);
 }
-
-#ifdef ENABLE_GL_DEBUG_CALLBACK
-static const char* DebugTypeString(GLenum type) {
-	switch(type) {
-	case GL_DEBUG_TYPE_ERROR: return "error";
-	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "deprecated behavior";
-	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: return "undefined behavior";
-	case GL_DEBUG_TYPE_PORTABILITY: return "portability";
-	case GL_DEBUG_TYPE_PERFORMANCE: return "performance";
-	case GL_DEBUG_TYPE_MARKER: return "marker";
-	case GL_DEBUG_TYPE_PUSH_GROUP: return "push group";
-	case GL_DEBUG_TYPE_POP_GROUP: return "pop group";
-	case GL_DEBUG_TYPE_OTHER: return "other";
-	default: return "unknown";
-	}
-}
-static const char* DebugSourceString(GLenum source) {
-	switch(source) {
-	case GL_DEBUG_SOURCE_API: return "api";
-	case GL_DEBUG_SOURCE_WINDOW_SYSTEM: return "window system";
-	case GL_DEBUG_SOURCE_SHADER_COMPILER: return "shader compiler";
-	case GL_DEBUG_SOURCE_THIRD_PARTY: return "third party";
-	case GL_DEBUG_SOURCE_APPLICATION: return "application";
-	case GL_DEBUG_SOURCE_OTHER: return "other";
-	default: return "unknown";
-	}
-}
-static const char* DebugSeverityString(GLenum severity) {
-	switch(severity) {
-	case GL_DEBUG_SEVERITY_LOW: return "low";
-	case GL_DEBUG_SEVERITY_MEDIUM: return "medium";
-	case GL_DEBUG_SEVERITY_HIGH: return "high";
-	case GL_DEBUG_SEVERITY_NOTIFICATION: return "notification";
-	default: return "unknown";
-	}
-}
-
-static void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam) {
-	(void)userParam;
-	(void)length;
-	(void)id;
-	if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) return;
-	if (type == GL_DEBUG_TYPE_OTHER) return;
-	logInfo(SYS_GL, "'%s' of severity '%s' from '%s: %s", DebugTypeString(type), DebugSeverityString(severity), DebugSourceString(source), message);
-}
-#endif
 
 int appInit(AppInit init)
 {
@@ -115,17 +64,8 @@ int appInit(AppInit init)
 	}
 	logInfo(SYS_GL3W, "Initialization complete");
 
-	logInfo(SYS_GL, "Checking GL capabilities and writing them to %s", GL_INFO_FILENAME);
-	
-
-#ifdef ENABLE_GL_DEBUG_CALLBACK
-	glDebugMessageCallback((GLDEBUGPROC)GLDebugCallback, nullptr);
-	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
-	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	//glClear(GL_DEPTH);   // make an error to test
-#endif
-
 	/*
+	logInfo(SYS_GL, "Checking GL capabilities and writing them to %s", GL_INFO_FILENAME);
 	FILE* f = fopen(GL_INFO_FILENAME, "w");
 	if (f) {
 		fprintf(f, "Vendor:   %s\n", glGetString(GL_VENDOR));

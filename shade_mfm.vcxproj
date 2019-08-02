@@ -185,6 +185,7 @@
     <ClCompile Include="core\cpu_timer.cpp" />
     <ClCompile Include="core\dir.cpp" />
     <ClCompile Include="core\file_stat.cpp" />
+    <ClCompile Include="core\gl_message_log.cpp" />
     <ClCompile Include="core\gpu_timer.cpp" />
     <ClCompile Include="core\log.cpp" />
     <ClCompile Include="core\maths.cpp" />
@@ -220,6 +221,7 @@
     <ClInclude Include="core\crc.h" />
     <ClInclude Include="core\dir.h" />
     <ClInclude Include="core\file_stat.h" />
+    <ClInclude Include="core\gl_message_log.h" />
     <ClInclude Include="core\win_dirent.h" />
     <ClInclude Include="core\gpu_timer.h" />
     <ClInclude Include="core\log.h" />

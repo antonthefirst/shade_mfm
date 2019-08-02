@@ -91,6 +91,9 @@
     <ClCompile Include="src\data_fields.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="core\gl_message_log.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="libs\GLFW\glfw3.h">
@@ -218,6 +221,9 @@
     </ClInclude>
     <ClInclude Include="src\data_fields.h">
       <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="core\gl_message_log.h">
+      <Filter>core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
