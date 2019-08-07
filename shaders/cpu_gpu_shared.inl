@@ -52,17 +52,9 @@ struct SiteInfo {
 	 uvec4 event_layer;
 	 uvec4 base_layer;
 	 uvec4 dev;
+	 int event_ocurred_signal; int site_pad0, site_pad1, site_pad2;
 };
 
-struct EventJob {
-	ivec2 site_idx;
-	ivec2 pad0;
-};
-
-struct IndirectCommand {
-	uint  count;
-	uint  primCount;
-	uint  firstIndex;
-	uint  baseVertex;
-	uint  baseInstance;
+struct ControlState {
+	int supress_events; int event_ocurred; int ctrl_pad1, ctrl_pad2;
 };

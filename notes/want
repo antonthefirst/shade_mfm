@@ -1,0 +1,2 @@
+- temporarily disable a rule, without having to do a column of #
+- COMPILED message that fades out. otherwise without any moving numbers you can't tell if the thing is running or what, just staring at blank (did i run? is it still compiling?)

@@ -15,7 +15,7 @@ struct Message {
 	GLuint id;
 	GLenum severity;
 	GLsizei length;
-	char message[1024];
+	char message[1024]; // GL_MAX_DEBUG_MESSAGE_LENGTH = 0x9143 = 37187...so this could use some improvement if we don't want to truncate...
 	int count;
 	int64_t first_timestamp;
 	int64_t last_timestamp;
@@ -169,6 +169,7 @@ void glMessageLogUI() {
 					int freq_digs = 0;
 					while (n > 0) { freq_digs += 1; n /= 10; }
 					gui::BeginTooltip();
+					gui::Text("ID: 0x%08x", messages[i].id);
 					gui::Text("Count: %d", messages[i].count);
 					if (messages[i].first_timestamp != messages[i].last_timestamp) {
 						gui::Text("First Timestamp: %lld.%0*lld", messages[i].first_timestamp / time_frequency(), freq_digs, messages[i].first_timestamp % time_frequency());

@@ -38,6 +38,7 @@ static GLuint dev_img = 0;
 static GLuint vote_img = 0;
 static GLuint event_count_img = 0;
 static GLuint prng_state_img = 0;
+static GLuint ctrl_state_handle = 0;
 static u32 dispatch_counter = 0;
 static bool reset_ok = false;
 static ProgramInfo prog_info;
@@ -88,6 +89,8 @@ static bool show_zero_counts = 0;
 static int inspect_mode = INSPECT_MODE_BASIC;
 static ProgramStats prog_stats;
 static bool dont_reset_when_code_changes = false;
+static bool gui_break_on_event = false;
+static float event_window_vis = 0.0f;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
@@ -193,7 +196,8 @@ static void initStatsIfNeeded() {
 		for (unsigned i = 0; i < ARRSIZE(stats_handles); i++) {
 			glGenBuffers(1, &stats_handles[i]);
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, stats_handles[i]);
-			glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(WorldStats)), &zero_stats, GL_DYNAMIC_DRAW);
+			glObjectLabel(GL_BUFFER, stats_handles[i], -1, "'stats_handles'");
+			glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(WorldStats)), &zero_stats, GL_STREAM_READ);
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 		}
 	}
@@ -203,10 +207,36 @@ static void initStatsIfNeeded() {
 		for (unsigned i = 0; i < ARRSIZE(site_info_handles); i++) {
 			glGenBuffers(1, &site_info_handles[i]);
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, site_info_handles[i]);
-			glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(SiteInfo)), &zero_info, GL_DYNAMIC_DRAW);
+			glObjectLabel(GL_BUFFER, site_info_handles[i], -1, "'site_info_handles'");
+			glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(SiteInfo)), &zero_info, GL_STREAM_READ);
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 		}
 	}
+	//#TODO this probably needs to live elsewhere...
+	if (ctrl_state_handle == 0) {
+		ControlState zero_ctrl;
+		memset(&zero_ctrl, 0, sizeof(ControlState));
+		glGenBuffers(1, &ctrl_state_handle);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ctrl_state_handle);
+		glObjectLabel(GL_BUFFER, ctrl_state_handle, -1, "'ctrl_state_handle'");
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(ControlState)), &zero_ctrl, GL_STATIC_DRAW);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+}
+static void zeroControlSignals() {
+	// Site Info contains the break flag right now, maybe move it elsewhere
+	SiteInfo zero_info;
+	memset(&zero_info, 0, sizeof(SiteInfo));
+	for (unsigned i = 0; i < ARRSIZE(site_info_handles); i++) {
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, site_info_handles[i]);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(SiteInfo)), &zero_info, GL_STREAM_READ);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+	ControlState zero_ctrl;
+	memset(&zero_ctrl, 0, sizeof(ControlState));
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ctrl_state_handle);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(ControlState)), &zero_ctrl, GL_STATIC_DRAW);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 static void mfmSetUniforms(int stage = 0) {
 	glBindImageTexture(0, site_bits_img, 0, GL_FALSE, 0, GL_READ_WRITE, SITE_FORMAT);
@@ -224,11 +254,13 @@ static void mfmSetUniforms(int stage = 0) {
 	glUniform1ui(6, dispatch_counter);
 	glUniform2i(7, site_info_idx.x, site_info_idx.y);
 	glUniform1i(8, stage);
+	glUniform1i(9, gui_break_on_event);
 	glUniform1i(10, 0); // hacky constants to prevent gpu loop unrolling
 	glUniform1i(11, 1);
 	glUniform1i(12, EVENT_WINDOW_RADIUS*2);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, stats_handles[stats_write_idx]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, site_info_handles[stats_write_idx]);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ctrl_state_handle);
 }
 static void mfmGPUReset(ivec2 world_res) {
 	mfmSetUniforms(STAGE_RESET);
@@ -355,6 +387,9 @@ bool mfmDraw(ivec2 screen_res, ivec2 world_res, pose camera_from_world) {
 		glUniform2f(20, pos.x, pos.y);
 		glUniform2f(21, scale.x, scale.y);
 		glUniform1f(22, 1.0f / camera_aspect);
+		glUniform1f(23, float(screen_res.y) / float(world_res.y) * scale.y); 
+
+		glUniform1f(30, event_window_vis);
 
 		glBindVertexArray(renderGetUnitQuadVao());
 
@@ -498,6 +533,8 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 	}
 
 	gui_set.break_at_step_number = max(1, gui_set.break_at_step_number);
+
+	gui::Checkbox("Break on event", &gui_break_on_event);
 
 	gui::Checkbox("Don't reset when code changes", &dont_reset_when_code_changes);
 
@@ -679,6 +716,10 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		guiControl(&do_reset, &run, &do_step, &gui_world_res, dispatch_counter, AEPS, AER_avg);
 	} gui::End();
 
+	if (gui::Begin("Visualize")) {
+		gui::SliderFloat("event windows", &event_window_vis, 0.0f, 1.0f);
+	} gui::End();
+
 	if (run) {
 		dispatch_count = gui_set.run_speed;
 	} else if (do_step) {
@@ -759,6 +800,11 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 			mfmReadStats();
 
 		ctimer_stop();
+	}
+	if (site_info.event_ocurred_signal != 0) {
+		log("Break!\n");
+		run = false;
+		zeroControlSignals();
 	}
 
 	open_shader_gui |= checkForShaderErrors();

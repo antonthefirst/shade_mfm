@@ -1,0 +1,30 @@
+=element Membrane
+\symbol M
+\color #3e4
+\symmetries all
+
+==Rules
+
+given m isa Membrane
+
+ mm     ..
+  @_ ->  _@
+  m      .
+
+ m      .
+  m      .
+  @_ ->  _@
+  m      .
+  
+ m_     .@
+  m_     _@
+   @ ->   .
+  m_     _@
+ m_     .@
+
+# m_     .@
+#  @_ ->  _@
+#  m      .
+# m      .
+
+ @ -> @

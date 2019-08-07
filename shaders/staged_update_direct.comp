@@ -58,6 +58,9 @@ void main() {
 			site_info.event_layer = uvec4(0);
 			site_info.base_layer = uvec4(0);
 			site_info.dev = uvec4(0);
+
+			if (ctrl.event_ocurred == 1)
+				ctrl.supress_events = 1;
 		}
 	} else if (stage == STAGE_VOTE) {
 		uvec2 size = imageSize(img_vote);
@@ -70,6 +73,9 @@ void main() {
 			imageStore(img_prng_state, vote_idx, xoroshiro128_pack(_XORO));
 		}
 	} else if (stage == STAGE_EVENT) {
+		if (ctrl.supress_events != 0) // This guards against 'updates after break' which can happen before the CPU sees the event_ocurred_signal, and has had a chance to stop dispatching
+			return;
+
 		uvec2 size = imageSize(img_site_bits);
 		ivec2 center_idx = ivec2(gl_GlobalInvocationID.xy);
 
@@ -77,27 +83,30 @@ void main() {
 		if (center_idx.x < size.x && center_idx.y < size.y) {
 			_SITE_IDX = center_idx;
 			ivec2 vote_idx = _SITE_IDX +  ivec2(EVENT_WINDOW_RADIUS*2);				
+			uvec4 D = uvec4(0);
 			if  (isActiveMem(vote_idx)) {
-
 				_XORO = xoroshiro128_unpack(imageLoad(img_prng_state, vote_idx));
-				//uvec4 D = uvec4(0);
-
+				
 				Atom S = _SITE_LOAD(ivec2(0,0));
-				
-				_BEHAVE_DISPATCH(_UNPACK_TYPE(S));
+				AtomType T = _UNPACK_TYPE(S);
+				_BEHAVE_DISPATCH(T);
 
-				//D.z = 1; // #HACK site updated signal
+				D.z = 1; // #HACK site updated signal
 				
+				if (break_on_event && T != Empty && T != Void) {
+					ctrl.event_ocurred = 1;
+					site_info.event_ocurred_signal = 1;
+				}
+
 				atomicAdd(stats.event_count_this_batch, 1);
 				
 				uint event_count = imageLoad(img_event_count, center_idx).x;
 				event_count += 1;
 				imageStore(img_event_count, center_idx, uvec4(event_count));
 				imageStore(img_prng_state, vote_idx, xoroshiro128_pack(_XORO));
+				
 			}
-			
-			//imageStore(img_dev, center_idx, D);
-			
+			imageStore(img_dev, center_idx, D);
 		}
 	} else if (stage == STAGE_COMPUTE_STATS) {
 		uvec2 size = imageSize(img_site_bits);

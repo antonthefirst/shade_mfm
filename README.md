@@ -35,3 +35,8 @@ Dave Ackley for lengthy discussions and encouragement.
 Alan Zaffetti for early adopting GPUlam and spurring on improvements to it.
 
 Mariusz Sasinski for getting this to compile on Linux.
+
+## Credits
+
+UI powered by Dear ImGui: https://github.com/ocornut/imgui
+Image reading/writing by stb: https://github.com/nothings/stb/

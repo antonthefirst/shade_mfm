@@ -1,0 +1,12 @@
+=element Seed
+\symbol S
+\color #f2f
+
+==Rules
+
+change m isa Membrane
+ ___    mmm
+ _@_ -> m_m
+ ___    mmm
+ 
+ @ -> @
