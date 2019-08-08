@@ -8,10 +8,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define BPP 3
+
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
-void drawReadPixels(int x, int y, int width, int height, unsigned char* rgba_pixels) {
-	glReadPixels(x,y,width,height, GL_RGBA, GL_UNSIGNED_BYTE, rgba_pixels);
+void drawReadPixels(int x, int y, int width, int height, unsigned char* rgb_pixels) {
+	glReadPixels(x,y,width,height, GL_RGB, GL_UNSIGNED_BYTE, rgb_pixels);
 }
 
 struct RecSource {
@@ -57,7 +59,7 @@ void recFrame(const char* name, int x, int y, int w, int h) {
 	src.h = h;
 
 	if ((recording || snap) && source_idx == source_count) {
-		int size = src.w*src.h*4;
+		int size = src.w*src.h*BPP;
 		if (size > frame_bytesize) {
 			if (frame)  { free(frame); frame = NULL; }
 			frame = (unsigned char*)malloc(size);
@@ -66,12 +68,12 @@ void recFrame(const char* name, int x, int y, int w, int h) {
 		}
 		if (frame) {
 			drawReadPixels(x,y,w,h, frame);
-			int bpp = 4;
+			
 			unsigned char t;
 			for (int j=0; j < h/2; ++j) {
-				unsigned char *p1 = frame +      j     *w*bpp;
-				unsigned char *p2 = frame + (h-1-j)*w*bpp;
-				for (int i=0; i < w*bpp; ++i) {
+				unsigned char *p1 = frame +      j     *w*BPP;
+				unsigned char *p2 = frame + (h-1-j)*w*BPP;
+				for (int i=0; i < w*BPP; ++i) {
 					t = p1[i], p1[i] = p2[i], p2[i] = t;
 				}
 			}
@@ -151,7 +153,7 @@ void recUpdate() {
 			res = fileStat(fname, &buf);
 			suffix++;
 		}
-		stbi_write_png(fname, sources[source_idx].w, sources[source_idx].h, 4, frame, sources[source_idx].w*4);
+		stbi_write_png(fname, sources[source_idx].w, sources[source_idx].h, BPP, frame, 0);
 		snap = false;
 	}
 	frame_valid = false;
