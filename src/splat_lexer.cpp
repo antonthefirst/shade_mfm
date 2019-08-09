@@ -25,7 +25,7 @@ Token lexIdentifier(Lexer* z) {
 	t.line_num = z->line_num;
 	t.str = z->at;
 	while (true) {
-		if (isAlpha(z->at[0]) || isNumeric(z->at[0]) || z->at[0] == '_') { // eat the identifier
+		if (isAlpha(z->at[0]) || isNumeric(z->at[0]) || z->at[0] == '_' || z->at[0] == '@') { // eat the identifier
 			z->at += 1;
 		} else {
 			break;
@@ -278,7 +278,7 @@ Token lexToken(Lexer* z, Errors* err) {
 
 	default:
 	{
-		if (isAlpha(z->at[0])) {
+		if (isAlpha(z->at[0]) || z->at[0] == '@') {
 			t = lexIdentifier(z);
 			StringRange r = StringRange(t.str, t.len);
 			for (int i =  0; i < ARRSIZE(keyword_strings); ++i) {

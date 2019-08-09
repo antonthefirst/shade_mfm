@@ -190,6 +190,10 @@ static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 	return false;
 }
 static void initStatsIfNeeded() {
+	// it sounds like these should really be glBufferStorage, but that requires 4.4
+	// https://www.khronos.org/opengl/wiki/Buffer_Object#Immutable_Storage
+	// https://stackoverflow.com/questions/36239869/performance-warning-when-using-glmapbufferrange
+	// https://stackoverflow.com/questions/27810542/what-is-the-difference-between-glbufferstorage-and-glbufferdata
 	if (stats_handles[0] == 0) {
 		WorldStats zero_stats;
 		memset(&zero_stats, 0, sizeof(WorldStats));

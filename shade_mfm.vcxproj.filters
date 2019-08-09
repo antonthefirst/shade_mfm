@@ -272,6 +272,9 @@
     <Filter Include="projects\predator_prey">
       <UniqueIdentifier>{48aea71b-7e86-45f7-a6b8-ed0dd1ef72a5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="projects\C211">
+      <UniqueIdentifier>{be148a19-f8f1-4937-835c-e321757e3fa2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\draw.frag">
@@ -354,6 +357,27 @@
     </None>
     <None Include="projects\basic\init.gpulam">
       <Filter>projects\basic</Filter>
+    </None>
+    <None Include="projects\C211\Content.splat">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\InnerMembrane.splat">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\OuterMembrane.splat">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\QMembrane.splat">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\Seed.splat">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\init.gpulam">
+      <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\C211\QContent.splat">
+      <Filter>projects\C211</Filter>
     </None>
   </ItemGroup>
 </Project>

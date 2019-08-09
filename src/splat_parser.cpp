@@ -39,12 +39,18 @@ static NodeType metadata_types[] = {
 	Node_metadata_licence,
 };
 static StringRange symmetry_strings[] = {
+	StringRange("normal"),
 	StringRange("all"),
 	StringRange("none"),
+	StringRange("rotations"),
+	StringRange("flips"),
 };
 static unsigned int symmetry_bitmasks[] = {
+	0x00,
 	0xff, // 11111111
 	0x00,
+	0x0f, // 00001111
+	0x55, // 01010101
 };
 
 Node* makeNode(NodeType type, Token tok) {
@@ -315,8 +321,6 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 			ivec2 rhs_pos = rhs.start + pos;
 			bool lhs_empty = full_img.inImage(lhs_pos) ? full_img(lhs_pos) == ' ' : true;
 			bool rhs_empty = full_img.inImage(rhs_pos) ? full_img(rhs_pos) == ' ' : true;
-			char lhs_char = full_img.inImage(lhs_pos) ? full_img(lhs_pos) : 0;
-			char rhs_char = full_img.inImage(rhs_pos) ? full_img(rhs_pos) : 0;
 			if (lhs_empty ^ rhs_empty) { // different!
 				e.img_color[lhs_pos.y][lhs_pos.x] = COLOR_ERROR;
 				e.img_color[rhs_pos.y][rhs_pos.x] = COLOR_ERROR;
@@ -377,12 +381,52 @@ Node* parseSpatialForm(Parser* p, Errors* err, Token t) {
 			goto END;
 		}
 	}
+	ivec2 rhs_center_pos = rhs.start + (lhs_center_pos - lhs.start);
+
+	// check that diagrams don't extend outside the event window
+	{
+		ParserError e;
+		e.tok = t;
+		e.img = full_img;
+		e.show_diagram = true;
+		ivec2 pos = ivec2(0, 0);
+		ivec2 pos_end = maxvec(lhs.end-lhs.start, rhs.end-rhs.start);
+		bool out_of_bounds = false;
+		while (true) {
+			ivec2 lhs_pos = lhs.start + pos;
+			ivec2 rhs_pos = rhs.start + pos;
+			bool lhs_empty = full_img.inImage(lhs_pos) ? full_img(lhs_pos) == ' ' : true;
+			bool rhs_empty = full_img.inImage(rhs_pos) ? full_img(rhs_pos) == ' ' : true;
+			if (!lhs_empty && taxilen(lhs_pos - lhs_center_pos) > 4) {
+				e.img_color[lhs_pos.y][lhs_pos.x] = COLOR_ERROR;
+				out_of_bounds = true;
+			}
+			if (!rhs_empty && taxilen(rhs_pos - rhs_center_pos) > EVENT_WINDOW_RADIUS) {
+				e.img_color[rhs_pos.y][rhs_pos.x] = COLOR_ERROR;
+				out_of_bounds = true;
+			}
+			if (pos.x == pos_end.x) {
+				if (pos.y == pos_end.y) {
+					break;
+				} else {
+					pos.x = 0;
+					pos.y += 1;
+				}
+			} else {
+				pos.x += 1;
+			}
+		}
+		if (out_of_bounds) {
+			e.msg.set(TempStr("Keycodes outside event window (manhattan distance %d).", EVENT_WINDOW_RADIUS));
+			err->errors.push(e);
+			goto END;
+		}
+	}
 
 	// Begin semantic parsing
 	// At this stage, the spatial syntax should all be valid
 	// - center pos != -1 (@ was found)
 	// - lhs and rhs shapes exist, and match in shape
-	ivec2 rhs_center_pos = rhs.start + (lhs_center_pos - lhs.start);
 	for (int i = 0; i < 41; ++i) {
 		ivec2 lhs_pos = lhs_center_pos + getSiteCoord(i);
 		n->diag.lhs[i] = full_img.inImage(lhs_pos) && comp_img(lhs_pos) == lhs.comp_id ? full_img(lhs_pos) : ' ';
@@ -423,15 +467,61 @@ Node* parseSectionHeader(Parser* par, Errors* err, Token tok)  {
 		err->add(tok, TempStr("Section type '%.*s' not recognized.", name.len, name.str)); 
 		return NULL;
 	} else {
-		Node* nod = makeNode(node_type, tok);
-		nod->int_val = header_depth;
 		if (node_type == Node_element) {
+			StringRange element_name = { };
 			skipWhitespace(&str, str_end);
-			nod->str_val.str = str;
+			element_name.str = str;
 			skipAlphaNumeric(&str, str_end);
-			nod->str_val.len = str - nod->str_val.str;
+			element_name.len = str - element_name.str;
+			skipWhitespace(&str, str_end); // needed so lexer doesn't think we're starting with a space and it's a spatial form
+			Lexer lex = Lexer(str, str_end);
+			Token super_tok = { };
+			bool isa_found = false;
+			bool parsing = true;
+			while (parsing) {
+				Token elem_tok = lexToken(&lex, err);
+				switch (elem_tok.type) {
+				case Token_end_of_stream: parsing = false; break;
+				case Token_keyword:
+					if (!isa_found) {
+						if (elem_tok.key == Keyword_isa) {
+							isa_found = true;
+						}
+					} else {
+						parsing = false; // unexpected keyword
+					}
+					break;
+				case Token_identifier:
+					if (isa_found) {
+						super_tok = elem_tok;
+						super_tok.line_num = tok.line_num;
+					}
+					parsing = false;
+					break;
+
+				default: // if it's a non-identifier or keyword, just give up
+					parsing = false;
+					break;
+				}
+			}
+			if (isa_found && super_tok.len == 0) {
+				err->add(tok, TempStr("Super of '%.*s' is missing.", element_name.len, element_name.str)); 
+				return NULL;
+			} else {
+				Node* nod = makeNode(node_type, tok);
+				nod->int_val = header_depth;
+				nod->str_val = element_name;
+				if (isa_found) {
+					Node* super = makeNode(Node_super, super_tok, StringRange(super_tok.str, super_tok.len));
+					addKid(nod, super);
+				}
+				return nod;
+			}
+		} else {
+			Node* nod = makeNode(node_type, tok);
+			nod->int_val = header_depth;
+			return nod;
 		}
-		return nod;
 	}
 }
 

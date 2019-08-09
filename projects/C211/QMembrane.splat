@@ -1,0 +1,49 @@
+#####
+= element QMembrane. The parent class of inner and outer membrane
+\symmetries all
+
+== Rules: OM management (mostly growing)
+given @ isa OuterMembrane
+given i isa InnerMembrane
+given o isa OuterMembrane
+given q isa QMembrane
+given n { return !is(_curatom, InnerMembrane); }
+
+given e { return true; // Allow dead sites }      
+vote  e isa Empty   # Count empty sites
+check e { return _nvotes*3u >= _nsites*2u; } 
+
+vote  f isa QContent # Count up content
+check f { return random_oddsOf(_nvotes,3); }
+
+# Self-stabilization rules
+
+  i_       .@
+  i@   ->  ..    # Square off (complete outer membrane)
+
+  nnn      ...
+  n@n  ->  ._.   # Die off (eliminate isolated outer membrane)
+  nnn      ...
+
+  iii      ...
+  i@i  ->  .i.   # Turn in (eliminate surrounded outer membrane)
+  iii      ...
+
+# Growth rules
+ ee_oqff     ..@....
+ eeo@iff ->  ...i...     # Run out
+ eeoiiff     .......
+
+    eo        ..
+    _oif      o...
+    _@if  ->  @i..       # Break out
+    _oif      o...
+    eo        ..
+
+      ff       ..
+    qiif     ....
+    o@if  -> .i..        # Punch out
+    qiif     ....
+      ff       .. 
+
+ @ -> .

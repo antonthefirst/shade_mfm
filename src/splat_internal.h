@@ -249,6 +249,7 @@ enum NodeType {
 	Node_rules,
 	Node_methods,
 	Node_data,
+	Node_super,
 	Node_metadata_symmetries,
 	Node_metadata_radius,
 	Node_metadata_symbol,
@@ -274,6 +275,7 @@ inline const char* toStr(NodeType t) {
 	case Node_rules: return "rules";
 	case Node_methods: return "methods";
 	case Node_data: return "data";
+	case Node_super: return "super";
 	case Node_metadata_symmetries: return "symmetries metadata";
 	case Node_metadata_radius: return "radius metadata";
 	case Node_metadata_symbol: return "symbol metadata";
@@ -355,6 +357,7 @@ struct Emitter {
 	bool         lhs_used[128];
 	bool         rhs_used[128];
 	StringRange element_name = { };
+	StringRange super_name = { };
 	int ruleset_idx = 0;
 	int rule_idx = 0;
 	int indent = 0;

@@ -20,9 +20,14 @@ void Init(C2D c, S2D s) {
 		S = new(DReg);
 	}
 #endif
-#if 1 // center test
+#if 0 // center test
 	if (c == s/2) {
 		S = new(TestInjector);
+	} 
+#endif
+#if 1 // center test
+	if (c == s/2) {
+		S = new(TestSpiral);
 	} 
 #endif
 #if 0 // center test

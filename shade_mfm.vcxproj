@@ -264,6 +264,13 @@
     <None Include="projects\anton_testing\inject.splat" />
     <None Include="projects\anton_testing\test.splat" />
     <None Include="projects\basic\init.gpulam" />
+    <None Include="projects\C211\Content.splat" />
+    <None Include="projects\C211\init.gpulam" />
+    <None Include="projects\C211\InnerMembrane.splat" />
+    <None Include="projects\C211\OuterMembrane.splat" />
+    <None Include="projects\C211\QContent.splat" />
+    <None Include="projects\C211\QMembrane.splat" />
+    <None Include="projects\C211\Seed.splat" />
     <None Include="projects\predator_prey\Animal.splat" />
     <None Include="projects\predator_prey\init.gpulam" />
     <None Include="projects\predator_prey\Plant.splat" />

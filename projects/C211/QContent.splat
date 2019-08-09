@@ -1,0 +1,8 @@
+
+= element QContent. The parent class of membrane-enclosed content
+# Note: Not \symmetries all! C2D.dot() messed up on flips!
+\symmetries rotations
+
+== Rules: placeholder
+
+ @ -> .

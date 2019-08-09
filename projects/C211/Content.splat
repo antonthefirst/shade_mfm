@@ -1,0 +1,9 @@
+= element Content isa QContent
+\symbol C
+\color #2d3
+# Note: Not \symmetries all! C2D.dot() messed up on flips!
+\symmetries rotations
+
+==Rules
+
+ @ -> .

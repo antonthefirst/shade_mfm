@@ -1,0 +1,14 @@
+= element TestSpiral
+\symbol TS
+\color #abc
+\symmetries rotations
+
+== Rules
+
+change w isa Wall
+
+          
+   ..      ww
+ @..  -> @ww
+
+ @ -> .

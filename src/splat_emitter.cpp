@@ -430,7 +430,9 @@ static Node* emitPhase(Emitter* emi, Node* who, Errors* err) {
 	who = who->sib;
 	if (who->type != Node_identifier) { err->add(who->tok, TempStr("Phase keycode '%.*s' is not valid.", who->tok.len, who->tok.str)); return NULL; }
 	if (who->tok.len != 1) { err->add(who->tok, TempStr("Phase keycode '%.*s' is more than one character long.", who->tok.len, who->tok.str)); return NULL; }
-	if (!isAlpha(who->tok.str[0]) && !isNumeric(who->tok.str[0])) { err->add(who->tok, TempStr("Phase keycode '%c' (ASCII value %d) is not a printable character.", who->tok.str[0], who->tok.str[0])); return NULL; }
+	if (who->tok.str[0] == '_' || who->tok.str[0] == '.' || who->tok.str[0] == '?') { err->add(who->tok, TempStr("Phase keycode '%c' cannot be defined.", who->tok.str[0], who->tok.str[0])); return NULL; }
+	if (who->tok.str[0] != '@' && !isAlpha(who->tok.str[0]) && !isNumeric(who->tok.str[0])) { err->add(who->tok, TempStr("Phase keycode '%c' (ASCII value %d) is not a printable character.", who->tok.str[0], who->tok.str[0])); return NULL; }
+	
 	bind += who->tok.str[0];
 
 	/* What */
@@ -477,15 +479,18 @@ void emitRuleset(Emitter* emi) {
 void emitElement(Emitter* emi, Node* who) {
 	/* Rulesets */
 	if (emi->ruleset_idx > 1) {
-		emitLine(emi, "void " RULEELEMENT_FORMAT "() {", RULEELEMENT_FORMAT_ARGS);
+		emitLine(emi, "bool " RULEELEMENT_FORMAT "() {", RULEELEMENT_FORMAT_ARGS);
 		emitIndent(emi);
 		for (int i = 1; i < emi->ruleset_idx; ++i) {
-			emitLine(emi, "if (" RULESET_FORMAT "()) return;", emi->element_name.len, emi->element_name.str, i);
+			emitLine(emi, "if (" RULESET_FORMAT "()) return true;", emi->element_name.len, emi->element_name.str, i);
 		}
+		if (emi->super_name.len)
+			emitLine(emi, "if (%.*s_behave()) return true;", emi->super_name.len, emi->super_name.str);
+		emitLine(emi, "return false;");
 		emitUnindent(emi);
 		emitLine(emi, "}");
 	} else {
-		emitLine(emi, "void " RULEELEMENT_FORMAT "() { /* Does nothing */ }", RULEELEMENT_FORMAT_ARGS);
+		emitLine(emi, "bool " RULEELEMENT_FORMAT "() { return false; }", RULEELEMENT_FORMAT_ARGS); // #TODO #WRONG should fault here
 	}
 	emi->ruleset_idx = 0;
 
@@ -593,18 +598,21 @@ static Node* collectDataMember(Emitter* emi, Node* who, Errors* err, ProgramInfo
 }
 static void elementStart(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err, ProgramInfo* info)  {
 	emi->element_name = who->str_val;
+	emi->super_name = { };
 	emi->ruleset_idx = 1;
 	emi->data.clear();
 	
-	/* Collect Data Members */
-	Node* who_data = who->kid;
-	while (who_data) {
-		if (who_data->type == Node_data) {
-			Node* member = who_data->kid;
+	/* Collect Data Members and check for Super */
+	Node* who_kid = who->kid;
+	while (who_kid) {
+		if (who_kid->type == Node_data) {
+			Node* member = who_kid->kid;
 			while (member)
 				member = collectDataMember(emi, member, err, info);
+		} else if (who_kid->type == Node_super) {
+			emi->super_name = who_kid->str_val;
 		}
-		who_data = who_data->sib;
+		who_kid = who_kid->sib;
 	}
 
 	/* Pick offsets, avoiding straddling component boundaries */
@@ -712,7 +720,13 @@ static void emitElementTypeDecls(Emitter* emi, Node* who, Errors* err, ProgramIn
 		who = who->sib;
 	}
 	emitLine(emi, "#define TYPE_COUNT %d", t);
-	emitLine(emi, "");
+}
+static void emitInheritanceDecls(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
+	while (who) {
+		if (who->type == Node_element)
+			emitLine(emi, "bool %.*s_behave();", who->str_val.len, who->str_val.str);
+		who = who->sib;
+	}
 }
 static void emitElementDispatches(Emitter* emi, Node* who_first, Errors* err) {
 	/* Behavior */
@@ -770,6 +784,11 @@ void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, Progr
 	emitLine(emi, "");
 	emitLine(emi, "Atom ew(SiteNum i);");
 	emitLine(emi, "void ew(SiteNum i, Atom S);");
+
+	/* Forward decls needed by inheritance calls */
+	emitHeader(emi, 1, '+', '+', StringRange("Forward Declarations for Inheritance")); 
+	emitLine(emi, "");
+	emitInheritanceDecls(emi, who->kid, err, info);
 }
 void emitElements(Emitter* emi_decl, Emitter* emi_elem, Node* who, Errors* err, ProgramInfo* info) {
 	emi_elem->code.clear();
