@@ -1,0 +1,9 @@
+void Init(C2D c, S2D s) {
+	Atom S = new(Empty);
+
+	if (c.x % 10 == 0 && c.y % 10 == 0) {
+		S = new(SwapWormSeed);
+	}
+
+	ew(0, S); 
+}
