@@ -2,6 +2,8 @@
 
 #include <stddef.h>     /* For size_t */
 
+#define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
+
 struct ProgramStats {
 	float time_to_compile = 0.f; // time in seconds it took to compile all shaders
 	float time_to_link = 0.f;    // time it took to link the program

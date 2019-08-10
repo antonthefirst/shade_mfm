@@ -239,8 +239,7 @@ static void checkForUpdates(int file_idx, StringRange path) {
 	}
 
 
-#ifdef _WIN32
-	//TempStr prepend = TempStr("\n#line 1 %d\n", file_idx);
+#ifdef C_STYLE_LINE_DIRECTIVES
 	TempStr prepend = TempStr("\n#line 1 \"%s\"\n", file_entries[file_idx].name.str);
 #else
 	TempStr prepend = TempStr("\n#line 1 %d\n", file_idx);
@@ -419,6 +418,11 @@ static void checkAllFilesForUpdates() {
 
 			glCompileShader(s.handle);
 			
+			FILE* file = fopen(TempStr("debug_shaders/%s", file_entries[s.file_idx].file.str), "wb");
+			if (file) {
+				fwrite(s.final_text.str, s.final_text.len, 1, file);
+				fclose(file);
+			}
 
 			/*
 			s.final_text.clear();

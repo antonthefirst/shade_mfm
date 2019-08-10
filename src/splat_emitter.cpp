@@ -1,5 +1,7 @@
 #include "splat_internal.h"
+#include "mfm_utils.h"
 #include "core/string_range.h"
+#include "core/shader_loader.h" // for C_STYLE_LINE_DIRECTIVES
 
 // #HACK must match data_fields.cpp for now...
 enum BasicType {
@@ -120,7 +122,7 @@ static const char* findBracesEnd(Node* who) {
 }
 void emitDirectiveLine(Emitter* emi, Token tok) {
 	int file_idx = findFileIdx(emi->file_ranges, emi->file_count, tok.str);
-#ifdef _WIN32
+#ifdef C_STYLE_LINE_DIRECTIVES
 	StringRange file_name = emi->file_names[file_idx];
 	emitLine(emi, "/* Injected from file %.*s line %d */", file_name.len, file_name.str, tok.line_num);
 	emitLine(emi, "#line %d \"%.*s\"", tok.line_num+1, file_name.len, file_name.str);
@@ -150,10 +152,10 @@ void emitBlock(Emitter* emi, Node* who) {
 #define CHANGE_KEYCODE_FORMAT "_change_keycode%d"
 
 void emitGivenKeycodeDecl(Emitter* emi, int keycode) {
-	emitLine(emi, "bool " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(SiteNum _cursn) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
+	emitLine(emi, "bool " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(SiteNum _cursn, Atom _curatom) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
 }
 void emitVoteKeycodeDecl(Emitter* emi, int keycode) {
-	emitLine(emi, "void " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(SiteNum _cursn, inout int _nvotes, inout SiteNum _winsn) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
+	emitLine(emi, "void " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(SiteNum _cursn, Atom _curatom, inout int _nvotes, inout SiteNum _winsn) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
 }
 void emitCheckKeycodeDecl(Emitter* emi, int keycode) {
 	emitLine(emi, "bool " RULENAME_FORMAT CHECK_KEYCODE_FORMAT "(int _nvotes) { /* %c */", RULENAME_FORMAT_ARGS, keycode, keycode);
@@ -185,7 +187,7 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	for (int i = 0; i < ARRSIZE(Emitter::given); ++i) {
 		if (emi->lhs_used[i]) {
 			if (emi->given[i].block || emi->given[i].expression) {
-				emitLine(emi, "bool " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() {", RULENAME_FORMAT_ARGS, i);
+				emitLine(emi, "bool " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject(SiteNum _cursn, Atom _curatom) {", RULENAME_FORMAT_ARGS, i);
 				if (emi->given[i].block)
 					emitBlock(emi, emi->given[i].block);
 				else
@@ -196,11 +198,11 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 			emitIndent(emi);
 			if (emi->given[i].block || emi->given[i].expression) {
 				if (emi->given[i].isa.len)
-					emitLine(emi, "return is(ew(_cursn), %.*s) && " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject();", emi->given[i].isa.len, emi->given[i].isa.str, RULENAME_FORMAT_ARGS, i);
+					emitLine(emi, "return is(_curatom, %.*s) && " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject(_cursn, _curatom);", emi->given[i].isa.len, emi->given[i].isa.str, RULENAME_FORMAT_ARGS, i);
 				else
-					emitLine(emi, "return " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject();", RULENAME_FORMAT_ARGS, i);
+					emitLine(emi, "return " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject(_cursn, _curatom);", RULENAME_FORMAT_ARGS, i);
 			} else if (emi->given[i].isa.len) {
-				emitLine(emi, "return is(ew(_cursn), %.*s);", emi->given[i].isa.len, emi->given[i].isa.str);
+				emitLine(emi, "return is(_curatom, %.*s);", emi->given[i].isa.len, emi->given[i].isa.str);
 			} else if (i == '@') {
 				emitLine(emi, "return true;");
 			} else if (i == '_') {
@@ -236,11 +238,11 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 			emitIndent(emi);
 			if (emi->vote[i].block) {
 				if (emi->vote[i].isa.len)
-					emitLine(emi, "int myvotes = is(ew(_cursn), %.*s) ? " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() : 0;", emi->vote[i].isa.len, emi->vote[i].isa.str, RULENAME_FORMAT_ARGS, i);
+					emitLine(emi, "int myvotes = is(_curatom, %.*s) ? " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() : 0;", emi->vote[i].isa.len, emi->vote[i].isa.str, RULENAME_FORMAT_ARGS, i);
 				else
 					emitLine(emi, "int myvotes = " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject();", RULENAME_FORMAT_ARGS, i);
 			} else if (emi->vote[i].isa.len) {
-				emitLine(emi, "int myvotes = is(ew(_cursn), %.*s) ? 1 : 0;", emi->vote[i].isa.len, emi->vote[i].isa.str);
+				emitLine(emi, "int myvotes = is(_curatom, %.*s) ? 1 : 0;", emi->vote[i].isa.len, emi->vote[i].isa.str);
 			} else {
 				emitLine(emi, "int myvotes = 1;");
 			}
@@ -301,7 +303,8 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	emitIndent(emi);
 	for (int i = 0; i < 41; ++i) {
 		if (who->diag.lhs[i] != ' ') {
-			emitLine(emi, "if (!" RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(%d)) return false;", RULENAME_FORMAT_ARGS, who->diag.lhs[i], i);
+			ivec2 site_coord = getSiteCoord(i);
+			emitLine(emi, "if (!" RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(%d, ew(C2D(%d,%d)))) return false;", RULENAME_FORMAT_ARGS, who->diag.lhs[i], i, site_coord.x, site_coord.y);
 		}
 	}
 	emitLine(emi, "return true;");
@@ -322,7 +325,8 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 		if (who->diag.lhs[i] != ' ') { 
 			int vote_idx = nvote_from_keycode[who->diag.lhs[i]];
 			assert(vote_idx != -1);
-			emitLine(emi, RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(%d, _nvotes_%d, _winsn_%d); /* %c */", RULENAME_FORMAT_ARGS, who->diag.lhs[i], i, vote_idx, vote_idx, who->diag.lhs[i]);
+			ivec2 site_coord = getSiteCoord(i);
+			emitLine(emi, RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(%d, ew(C2D(%d,%d)), _nvotes_%d, _winsn_%d); /* %c */", RULENAME_FORMAT_ARGS, who->diag.lhs[i], i, site_coord.x, site_coord.y, vote_idx, vote_idx, who->diag.lhs[i]);
 		}
 	}
 	for (int i = 0; i < nvotes_count; ++i) {
@@ -490,7 +494,10 @@ void emitElement(Emitter* emi, Node* who) {
 		emitUnindent(emi);
 		emitLine(emi, "}");
 	} else {
-		emitLine(emi, "bool " RULEELEMENT_FORMAT "() { return false; }", RULEELEMENT_FORMAT_ARGS); // #TODO #WRONG should fault here
+		if (emi->super_name.len)
+			emitLine(emi, "bool " RULEELEMENT_FORMAT "() { return %.*s_behave(); }", RULEELEMENT_FORMAT_ARGS, emi->super_name.len, emi->super_name.str);
+		else
+			emitLine(emi, "bool " RULEELEMENT_FORMAT "() { return false; }", RULEELEMENT_FORMAT_ARGS); // #TODO #WRONG should fault here
 	}
 	emi->ruleset_idx = 0;
 
