@@ -1,0 +1,55 @@
+# SwapWorm. Moves forward by swapping. Grows as it finds res. Dies when it gets trapped.
+# https://github.com/walpolea/MFM-JS/blob/cf69ec951688723f994aaaea59903ff8f1072057/src/mfm/classes/elements/SwapWormElement.ts
+
+= element SwapWormSeed
+\color #4f4
+\symbol WS
+\symmetries all
+
+== Rules
+change h isa SwapWormHead
+
+ @ -> h
+
+= element SwapWormHead
+\color #44f
+\symbol WH
+\symmetries all
+
+== Rules
+change @ {
+  Int d = random_between(1, 8);
+  ew(d, new(SwapWormTail));
+  SwapWormTail_size_set(d, 5);
+  SwapWormTail_next_set(d);
+  ew_swap(0, d);
+}
+
+ @ -> @
+
+= element SwapWormTail
+\color #ff4
+\symbol WT
+\symmetries all
+
+== Data
+Unsigned(7) size
+Unsigned(3) next
+
+== Rules
+change @ {
+  if (SwapWormTail_size_get() == 0) {
+    ew(0, new(Empty));
+    return;
+  }
+  Unsigned next = SwapWormTail_next_get();
+  if (next == _cursn) {
+    SwapWormTail_next_set(next, next);
+    SwapWormTail_size_set(
+      next,
+      SwapWormTail_size_get()-1);
+    ew_swap(0, next);
+  }
+}
+
+ @ -> @
