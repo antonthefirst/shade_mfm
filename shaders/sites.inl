@@ -142,3 +142,31 @@ ARGB cu_color(Byte red, Byte green, Byte blue) {
 ARGB cu_color(Unsigned col) {
 	return ARGB((col >> 24) & 0xff, (col >> 16) & 0xff, (col >> 8) & 0xff, col & 0xff);
 }
+
+Atom _atoms[41];
+int _nvotes_0;
+int _nvotes_1;
+int _nvotes_2;
+int _nvotes_3;
+int _nvotes_4;
+int _nvotes_5;
+int _nvotes_6;
+int _nvotes_7;
+
+SiteNum _winsn_0;
+SiteNum _winsn_1;
+SiteNum _winsn_2;
+SiteNum _winsn_3;
+SiteNum _winsn_4;
+SiteNum _winsn_5;
+SiteNum _winsn_6;
+SiteNum _winsn_7;
+
+Atom _winatom_0;
+Atom _winatom_1;
+Atom _winatom_2;
+Atom _winatom_3;
+Atom _winatom_4;
+Atom _winatom_5;
+Atom _winatom_6;
+Atom _winatom_7;

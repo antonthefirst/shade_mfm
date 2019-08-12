@@ -1,0 +1,11 @@
+void Init(C2D c, S2D s) {
+	Atom S = new(Empty);
+
+#if 1 // center test
+	if (c == s/2) {
+		S = new(TestCrash);
+	} 
+#endif
+
+	ew(0, S); 
+}

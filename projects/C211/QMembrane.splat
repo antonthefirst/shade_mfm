@@ -7,14 +7,14 @@ given @ isa OuterMembrane
 given i isa InnerMembrane
 given o isa OuterMembrane
 given q isa QMembrane
-given n { return !is(_curatom, InnerMembrane); }
+given n { return !is(ew(_cursn), InnerMembrane); }
 
-given e { return true; // Allow dead sites }      
+given e { return true; // Allow dead sites }
 vote  e isa Empty   # Count empty sites
 check e { return _nvotes*3u >= _nsites*2u; } 
 
 vote  f isa QContent # Count up content
-check f { return random_oddsOf(_nvotes,3); }
+check f { return random.oddsOf(_nvotes,3); }
 
 # Self-stabilization rules
 
@@ -28,7 +28,3 @@ check f { return random_oddsOf(_nvotes,3); }
   iii      ...
   i@i  ->  .i.   # Turn in (eliminate surrounded outer membrane)
   iii      ...
-
-
-
- @ -> .

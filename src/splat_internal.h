@@ -362,9 +362,6 @@ struct Emitter {
 	int rule_idx = 0;
 	int indent = 0;
 
-	// global state
-	int vote_sum_count_max = 0;
-
 	int element_uid = 0;
 	String code;
 };

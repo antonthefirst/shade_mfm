@@ -208,28 +208,30 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 		gui::RadioButton("output", &which, 1); gui::SameLine();
 		gui::RadioButton("ast", &which, 2);
 		gui::SameLine();
-		force_recompile = gui::Button("recompile");
+		force_recompile = gui::Button("recompile"); gui::SameLine();
+		if (gui::Button("dump compiled code")) {
+			FILE* f = fopen("debug_shaders/code.txt", "wb");
+			if (f) {
+				fwrite(emi_decl.code.str, emi_decl.code.len, 1, f);
+				fwrite(emi_elem.code.str, emi_elem.code.len, 1, f);
+				fclose(f);
+			}
+		}
 		gui::Separator();
+		gui::BeginChild("code");
 		if (which == 0) {
 			if (splat_concat.len)
 				gui::TextUnformatted(splat_concat.str, splat_concat.str + splat_concat.len);
 		} else if (which == 1) {
-			if (gui::Button("dump compiled code")) {
-				FILE* f = fopen("debug_shaders/code.txt", "wb");
-				if (f) {
-					fwrite(emi_decl.code.str, emi_decl.code.len, 1, f);
-					fwrite(emi_elem.code.str, emi_elem.code.len, 1, f);
-					fclose(f);
-				}
-			}
 			if (emi_decl.code.len > 0)
 				printCode(emi_decl.code.range());
 			if (emi_elem.code.len > 0)
-				printCode(emi_elem.code.range());
+				printCode(emi_elem.code.range());	
 		} else if (which == 2) {
 			if (root)
 				printNode(root);
 		}
+		gui::EndChild();
 	} gui::End();
 	gui::PopStyleColor();
 	
@@ -290,8 +292,8 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 			emi_elem.code.append("void Init(C2D c, S2D s) { return; }\n");
 
 		if (err.errors.count == 0) {
-			injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
-			injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
+			//injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
+			//injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
 		}
 		file_change = false;
 		project_change = false;

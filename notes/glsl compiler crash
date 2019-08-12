@@ -1,0 +1,13 @@
+- using 'in' for function args seems to make no difference (still crashes)
+- removing the _curatom access still crashes
+- reading all 41 atoms in at start is about 4x slower. reading less costs less. declaring array costs nothing.
+- declaring _nvotes, _winsn, as globals rather than local vars doesn't help compiling
+  however it also doesn't impact performance on the regular case...
+- replacing random_create() with a constant made it compile. so perhaps all those vote calls are causing some issue (lots of math on each?)
+  however replacing it with "val_max == 0, return" made it not compile, so that's confusing. since that wouldn't use any more registers?
+- doing literally thousands of random_create() doesn't crash the compiler. it takes it to like 2gb of memory while compiling, and it takes 20 seconds to do it's thing, but it doesn't crash. and the resulting code runs, and runs sloweer (so it's doing 'something' at least, maybe wrongly)
+- crash can occur simply from one file. even if QMembrane has no diagrams, placing the same diagrams inside Seed fail it
+- can replicate it simply with a fork bomb that has 4 copies of a nearly full diagram replacement rule
+- can shove the test crash code directly into update loop, and simply call it instead of behave, and it also crashes.
+- the crashy shader appears to "stick around", it takes longer to crash when fresh, then after a reboot. so maybe it's not the shader compiler that's crashing? or the compiler does a lot of the work and then caches that, then only crashes "setting" the shader or something like that?
+- it does feel like the compiler, because i just had a syntax bug in gpulam (random.oddsof instead of random_oddsOf) which wouldn't have ever compiled had it made it that far, so the shader simply wouldn't have run because an error would have been reported. hmm questionable, because the key the injected code was bound to was never used, it wasnt actually being put in

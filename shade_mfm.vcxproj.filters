@@ -275,6 +275,9 @@
     <Filter Include="projects\C211">
       <UniqueIdentifier>{be148a19-f8f1-4937-835c-e321757e3fa2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="projects\crash_test">
+      <UniqueIdentifier>{97c43e2e-2aa1-453f-be89-82d73fd04874}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\draw.frag">
@@ -378,6 +381,12 @@
     </None>
     <None Include="projects\C211\QContent.splat">
       <Filter>projects\C211</Filter>
+    </None>
+    <None Include="projects\crash_test\init.gpulam">
+      <Filter>projects\crash_test</Filter>
+    </None>
+    <None Include="projects\crash_test\TestCrash.splat">
+      <Filter>projects\crash_test</Filter>
     </None>
   </ItemGroup>
 </Project>

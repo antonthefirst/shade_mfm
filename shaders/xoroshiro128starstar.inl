@@ -1,6 +1,6 @@
 // from http://xoshiro.di.unimi.it/xoshiro128starstar.c
 
-uint xororotl(const uint x, int k) {
+uint xororotl(uint x, int k) {
 	return (x << k) | (x >> (32 - k));
 }
 XoroshiroState xoroshiro128_unpack(uvec4 v) {

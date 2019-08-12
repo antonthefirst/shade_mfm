@@ -11,6 +11,7 @@
 //include "xoroshiro128starstar.inl"
 
 bool isActiveMem(ivec2 vote_idx);
+void MEGA_RNG();
 
 void main() {
 	if (stage == STAGE_RESET) {
@@ -87,9 +88,12 @@ void main() {
 			if  (isActiveMem(vote_idx)) {
 				_XORO = xoroshiro128_unpack(imageLoad(img_prng_state, vote_idx));
 				
+				//for (int i = 0; i < 8; ++i)
+				//	_atoms[i] = _SITE_LOAD(ew_getCoordRaw(i));
 				Atom S = _SITE_LOAD(ivec2(0,0));
 				AtomType T = _UNPACK_TYPE(S);
 				_BEHAVE_DISPATCH(T);
+				//MEGA_RNG();
 
 				D.z = 1; // #HACK site updated signal
 				
@@ -338,4 +342,7 @@ bool isActiveMem(ivec2 vote_idx) {
 	if (imageLoad(img_vote, vote_idx + ivec2(+0,+8)).x >= center_v) return false;
 #endif
 	return true;
+}
+
+void MEGA_RNG() { 
 }
