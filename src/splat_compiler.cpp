@@ -292,8 +292,8 @@ void checkForSplatProgramChanges(bool* file_change_out, bool* project_change_out
 			emi_elem.code.append("void Init(C2D c, S2D s) { return; }\n");
 
 		if (err.errors.count == 0) {
-			//injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
-			//injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
+			injectProceduralFile("shaders/atom_decls.inl", emi_decl.code.str, emi_decl.code.len);
+			injectProceduralFile("shaders/atoms.inl", emi_elem.code.str, emi_elem.code.len);
 		}
 		file_change = false;
 		project_change = false;

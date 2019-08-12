@@ -174,13 +174,18 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	memset(emi->nsites, 0, sizeof(Emitter::nsites));
 	memset(emi->lhs_used, 0, sizeof(Emitter::lhs_used));
 	memset(emi->rhs_used, 0, sizeof(Emitter::rhs_used));
+	int lhs_active_sites = 0;
+	int rhs_active_sites = 0;
 	for (int i = 0; i < 41; ++i) {
 		if (who->diag.lhs[i] != ' ')  {
 			emi->lhs_used[who->diag.lhs[i]] = true;
 			emi->nsites[who->diag.lhs[i]] += 1;
+			lhs_active_sites += 1;
 		}
-		if (who->diag.rhs[i] != ' ')
+		if (who->diag.rhs[i] != ' ') {
 			emi->rhs_used[who->diag.rhs[i]] = true;
+			rhs_active_sites += 1;
+		}
 	}
 
 	/* Create slots to keycode map (and inverse) */
@@ -295,7 +300,6 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	}
 
 	/* Change keycode binds */
-#if 1
 	for (int s_rhs = 0; s_rhs < rhs_slot_count; ++s_rhs) {
 		int k = rhs_keycode_from_slot[s_rhs];
 		int s_lhs = slot_from_keycode[k];
@@ -326,42 +330,25 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 		emitLine(emi, "#undef _winsn");
 		emitLine(emi, "}");
 	}
-#else
-	for (int i = 0; i < ARRSIZE(Emitter::change); ++i) {
-		if (emi->rhs_used[i]) {
-			emitChangeKeycodeDecl(emi, i);
-			emitIndent(emi);
-			if (emi->change[i].block) {
-				emitBlock(emi, emi->change[i].block);
-			} else if (emi->change[i].isa.len) {
-				emitLine(emi, "ew(_cursn, new(%.*s));", emi->change[i].isa.len, emi->change[i].isa.str);
-			} else if (i == '_') {
-				emitLine(emi, "ew(_cursn, new(Empty));");
-			} else if (i == '?') {
-				emitLine(emi, "/* Nothing to do */"); 
-			} else if (i == '.') {
-				emitLine(emi, "/* Nothing to do */");
-			} else {
-				emitLine(emi, "ew(_cursn, _winatom); // Default");
-			}
-			emitUnindent(emi);
-			emitLine(emi, "}");
-		}
-	}
-#endif
 
 	/* Given */
 	emitLine(emi, "bool " RULENAME_FORMAT "_given() {", RULENAME_FORMAT_ARGS);
 	emitIndent(emi);
-	emitIndentedText(emi, "const int dispatch_table[41] = {");
+	emitIndentedText(emi, "const int sitenum_table[%d] = {", lhs_active_sites);
 	for (int i = 0; i < 41; ++i)
-		emitText(emi, " %d,", who->diag.lhs[i] != ' ' ? slot_from_keycode[who->diag.lhs[i]] : -1);
+		if (who->diag.lhs[i] != ' ')
+			emitText(emi, " %d,", i);
 	emitLine(emi, "};");
-	emitLine(emi, "for (int i = 0; i < 41; ++i) {");
+	emitIndentedText(emi, "const int dispatch_table[%d] = {", lhs_active_sites);
+	for (int i = 0; i < 41; ++i)
+		if (who->diag.lhs[i] != ' ')
+			emitText(emi, " %d,", slot_from_keycode[who->diag.lhs[i]]);
+	emitLine(emi, "};");
+	emitLine(emi, "for (int i = 0; i < %d; ++i) {", lhs_active_sites);
 	emitIndent(emi);
 	emitLine(emi, "switch (dispatch_table[i]) {");
 	for (int i = 0; i < slot_count; ++i)
-		emitLine(emi, "case %d: if (!" RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(i)) return false; break;", i, RULENAME_FORMAT_ARGS, keycode_from_slot[i]);
+		emitLine(emi, "case %d: if (!" RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "(sitenum_table[i])) return false; break;", i, RULENAME_FORMAT_ARGS, keycode_from_slot[i]);
 	emitLine(emi, "default: break;");
 	emitLine(emi, "}");
 	emitUnindent(emi);
@@ -373,19 +360,25 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	/* Vote */
 	emitLine(emi, "void " RULENAME_FORMAT "_vote() {", RULENAME_FORMAT_ARGS);
 	emitIndent(emi);
-	emitIndentedText(emi, "const int dispatch_table[41] = {");
-	for (int i = 0; i < 41; ++i)
-		emitText(emi, " %d,", who->diag.lhs[i] != ' ' ? slot_from_keycode[who->diag.lhs[i]] : -1);
-	emitLine(emi, "};");
 	for (int i = 0; i < slot_count; ++i) {
 		emitLine(emi, "_nvotes_%d = 0; /* %c */", i, keycode_from_slot[i]);
 		emitLine(emi, "_winsn_%d = InvalidSiteNum;", i);
 	}
-	emitLine(emi, "for (int i = 0; i < 41; ++i) {");
+	emitIndentedText(emi, "const int sitenum_table[%d] = {", lhs_active_sites);
+	for (int i = 0; i < 41; ++i)
+		if (who->diag.lhs[i] != ' ')
+			emitText(emi, " %d,", i);
+	emitLine(emi, "};");
+	emitIndentedText(emi, "const int dispatch_table[%d] = {", lhs_active_sites);
+	for (int i = 0; i < 41; ++i)
+		if (who->diag.lhs[i] != ' ')
+			emitText(emi, " %d,", slot_from_keycode[who->diag.lhs[i]]);
+	emitLine(emi, "};");
+	emitLine(emi, "for (int i = 0; i < %d; ++i) {", lhs_active_sites);
 	emitIndent(emi);
 	emitLine(emi, "switch (dispatch_table[i]) {");
 	for (int i = 0; i < slot_count; ++i)
-		emitLine(emi, "case %d: " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(i); break;", i, RULENAME_FORMAT_ARGS, keycode_from_slot[i]);
+		emitLine(emi, "case %d: " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "(sitenum_table[i]); break;", i, RULENAME_FORMAT_ARGS, keycode_from_slot[i]);
 	emitLine(emi, "default: break;");
 	emitLine(emi, "}");
 	emitUnindent(emi);
@@ -407,18 +400,23 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	emitLine(emi, "}");
 
 	/* Change */
-#if 1
 	emitLine(emi, "void " RULENAME_FORMAT "_change() {", RULENAME_FORMAT_ARGS);
 	emitIndent(emi);
-	emitIndentedText(emi, "const int dispatch_table[41] = {");
+	emitIndentedText(emi, "const int sitenum_table[%d] = {", rhs_active_sites);
 	for (int i = 0; i < 41; ++i)
-		emitText(emi, " %d,", who->diag.rhs[i] != ' ' ? rhs_slot_from_keycode[who->diag.rhs[i]] : -1); //#TODO can remove the check, ' ' slot is -1 
+		if (who->diag.rhs[i] != ' ')
+			emitText(emi, " %d,", i);
 	emitLine(emi, "};");
-	emitLine(emi, "for (int i = 0; i < 41; ++i) {");
+	emitIndentedText(emi, "const int dispatch_table[%d] = {", rhs_active_sites);
+	for (int i = 0; i < 41; ++i)
+		if (who->diag.rhs[i] != ' ')
+			emitText(emi, " %d,", rhs_slot_from_keycode[who->diag.rhs[i]]);
+	emitLine(emi, "};");
+	emitLine(emi, "for (int i = 0; i < %d; ++i) {", rhs_active_sites);
 	emitIndent(emi);
 	emitLine(emi, "switch (dispatch_table[i]) {");
 	for (int s = 0; s < rhs_slot_count; ++s) {
-		emitLine(emi, "case %d: " RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(i); break; /* %c */", s, RULENAME_FORMAT_ARGS, rhs_keycode_from_slot[s], rhs_keycode_from_slot[s]);
+		emitLine(emi, "case %d: " RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(sitenum_table[i]); break; /* %c */", s, RULENAME_FORMAT_ARGS, rhs_keycode_from_slot[s], rhs_keycode_from_slot[s]);
 	}
 	emitLine(emi, "default: break;");
 	emitLine(emi, "}");
@@ -426,25 +424,6 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	emitLine(emi, "}");
 	emitUnindent(emi);
 	emitLine(emi, "}");
-#else
-	emitText(emi, "void " RULENAME_FORMAT "_change(", RULENAME_FORMAT_ARGS);
-	for (int i = 0; i < slot_count; ++i)
-		emitText(emi, "in SiteNum _winsn_%d, in Atom _winatom_%d%s", i, i,  i < (slot_count - 1) ? ", " : "");
-	emitLine(emi, ") {");
-	emitIndent(emi);
-	for (int i = 0; i < 41; ++i) {
-		if (who->diag.lhs[i] != ' ') {
-			int vote_idx = slot_from_keycode[who->diag.rhs[i]];
-			if (vote_idx != -1)
-				emitLine(emi, RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(%d, _winsn_%d, _winatom_%d); /*  %c -> %c  */", RULENAME_FORMAT_ARGS, who->diag.rhs[i], i, vote_idx, vote_idx, who->diag.lhs[i], who->diag.rhs[i]);
-			else
-				emitLine(emi, RULENAME_FORMAT CHANGE_KEYCODE_FORMAT "(%d, InvalidSiteNum, InvalidAtom); /*  %c -> %c  */", RULENAME_FORMAT_ARGS, who->diag.rhs[i], i, who->diag.lhs[i], who->diag.rhs[i]);
-		}
-	}
-	emitUnindent(emi);
-	emitLine(emi, "}");
-#endif
-
 
 	/* Final rule */
 	emitLine(emi, "bool " RULENAME_FORMAT "() {", RULENAME_FORMAT_ARGS);
