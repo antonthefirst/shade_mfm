@@ -14,5 +14,6 @@ xcopy /yqs shaders				builds\%fname%\shaders\
 xcopy /yqs projects				builds\%fname%\projects\
 xcopy /yqs stdlib				builds\%fname%\stdlib\
 copy Release\shade_mfm.exe			builds\%fname%\%name%.exe
+copy Debug\shade_mfm.exe			builds\%fname%\%name%_debug.exe
 cd builds
 7z a %fname%.zip %fname%

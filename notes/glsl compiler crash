@@ -11,3 +11,5 @@
 - can shove the test crash code directly into update loop, and simply call it instead of behave, and it also crashes.
 - the crashy shader appears to "stick around", it takes longer to crash when fresh, then after a reboot. so maybe it's not the shader compiler that's crashing? or the compiler does a lot of the work and then caches that, then only crashes "setting" the shader or something like that?
 - it does feel like the compiler, because i just had a syntax bug in gpulam (random.oddsof instead of random_oddsOf) which wouldn't have ever compiled had it made it that far, so the shader simply wouldn't have run because an error would have been reported. hmm questionable, because the key the injected code was bound to was never used, it wasnt actually being put in
+
+shader compiler crash? out of reg? out of tex? what causes mem creep then bail/crash? any way to catch it?

@@ -262,6 +262,7 @@
   <ItemGroup>
     <None Include="projects\anton_testing\init.gpulam" />
     <None Include="projects\anton_testing\inject.splat" />
+    <None Include="projects\anton_testing\spiral.splat" />
     <None Include="projects\anton_testing\test.splat" />
     <None Include="projects\basic\init.gpulam" />
     <None Include="projects\C211\Content.splat" />

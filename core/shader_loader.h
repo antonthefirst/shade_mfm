@@ -3,7 +3,7 @@
 #include <stddef.h>     /* For size_t */
 
 #ifdef _WIN32
-#define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
+//#define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
 #endif
 
 struct ProgramStats {

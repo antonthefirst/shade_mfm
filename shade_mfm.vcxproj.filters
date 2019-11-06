@@ -388,5 +388,8 @@
     <None Include="projects\crash_test\TestCrash.splat">
       <Filter>projects\crash_test</Filter>
     </None>
+    <None Include="projects\anton_testing\spiral.splat">
+      <Filter>projects\anton_testing</Filter>
+    </None>
   </ItemGroup>
 </Project>

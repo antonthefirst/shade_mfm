@@ -785,6 +785,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 			sim_time_since_reset = 0.0;
 			wall_time_since_reset = 0.0;
 		}
+#if 1
 		if (do_reset)
 			mfmGPUReset(gui_world_res);
 
@@ -802,7 +803,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 
 		//if (want_stats) // need to read for AER
 			mfmReadStats();
-
+#endif
 		ctimer_stop();
 	}
 	if (site_info.event_ocurred_signal != 0) {
