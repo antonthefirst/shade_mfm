@@ -8,12 +8,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "evk.h"
+
 #define BPP 3
 
-#include <GL/gl3w.h>
-#include <GLFW/glfw3.h>
 void drawReadPixels(int x, int y, int width, int height, unsigned char* rgb_pixels) {
-	glReadPixels(x,y,width,height, GL_RGB, GL_UNSIGNED_BYTE, rgb_pixels);
+	assert(false);
+	//glReadPixels(x,y,width,height, GL_RGB, GL_UNSIGNED_BYTE, rgb_pixels);
 }
 
 struct RecSource {
@@ -46,12 +47,12 @@ static bool frame_valid = false;
 void recFrame(const char* name, int x, int y, int w, int h) {
 	if (source_count >= MAX_SOURCES) return;
 
-	AppState app; appGetState(app);
+	ivec2 res = ivec2(evk.win.Width, evk.win.Height);
 
-	x = max(0, min(app.res_x-1,x));
-	y = max(0, min(app.res_y-1,y));
-	w = min(app.res_x-x, w);
-	h = min(app.res_y-y, h);
+	x = max(0, min(res.x-1,x));
+	y = max(0, min(res.y-1,y));
+	w = min(res.x-x, w);
+	h = min(res.y-y, h);
 
 	RecSource& src = sources[source_count];
 	src.name = name;

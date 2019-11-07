@@ -313,7 +313,9 @@ void showSplatCompilerErrors(ProgramInfo* info, StringRange glsl_err, float glsl
 			if (any_errors) {
 				printErrors(&err, glsl_err, file_names.ptr, file_ranges.ptr, file_ranges.count);
 			} else {
+				/* #PORT
 				gui::AlignFirstTextHeightToWidgets();
+				*/
 				gui::Text("SPLAT compiled successfully."); gui::SameLine();
 				if (gui::Button("OK")) {
 					show_errors = false;

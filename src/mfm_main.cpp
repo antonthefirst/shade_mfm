@@ -12,17 +12,13 @@
 #include "shaders/defines.inl" // for RADIUS
 //#include "shaders/splitmix32.inl"
 #include "splat_compiler.h"
+#include "world.h"
+#include "render.h"
+#include "compute.h"
 
-#include <GL/gl3w.h>
+#include "wrap/evk.h"
 #include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
-
-#define PRNG_STATE_FORMAT  GL_RGBA32UI
-#define EVENT_COUNT_FORMAT GL_R32UI
-#define VOTE_FORMAT        GL_R32UI
-#define SITE_FORMAT        GL_RGBA32UI
-#define COLOR_FORMAT       GL_RGBA8
-#define DEV_FORMAT         GL_RGBA32UI
 
 #define INSPECT_MODE_BASIC 0
 #define INSPECT_MODE_FULL 1
@@ -30,18 +26,11 @@
 #define NO_SITE ivec2(-1);
 
 // mfm state
-static ivec2 world_res = ivec2(0);
-static ivec2 vote_res = ivec2(0);
-static GLuint site_bits_img = 0;
-static GLuint color_img = 0;
-static GLuint dev_img = 0;
-static GLuint vote_img = 0;
-static GLuint event_count_img = 0;
-static GLuint prng_state_img = 0;
 static GLuint ctrl_state_handle = 0;
 static u32 dispatch_counter = 0;
 static bool reset_ok = false;
 static ProgramInfo prog_info;
+static World world;
 
 // stats state
 #define STATS_BUFFER_SIZE 2
@@ -94,14 +83,19 @@ static float event_window_vis = 0.0f;
 
 
 static void drawViewport(int llx, int lly, int width, int height) {
+	/* #PORT
 	glViewport(llx, lly, width, height);
+	*/
 }
 static void drawClear(float r, float g, float b) {
+	/* #PORT
 	glClearColor(r, g, b, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT);
+	*/ 
 }
 
 static u32 renderGetUnitQuadVao() {
+	/* #PORT
 	if (unit_quad_vao != 0) return unit_quad_vao;
 	// create render geometry
 	glGenVertexArrays(1, &unit_quad_vao);
@@ -133,16 +127,20 @@ static u32 renderGetUnitQuadVao() {
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	return unit_quad_vao;
+	*/
 }
 static void texParamsClampToZeroAndNearest() {
+	/* #PORT
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); // 0 by default
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	*/
 }
 static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 	ivec2 req_vote_res = req_world_res + ivec2(EVENT_WINDOW_RADIUS * 2 * 2); // edges need to see R*2 off the edge, on each border
 
+	/* #PORT
 	
 	if (site_bits_img == 0) glGenTextures(1, &site_bits_img);
 	if (color_img == 0) glGenTextures(1, &color_img);
@@ -150,7 +148,6 @@ static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 	if (vote_img == 0) glGenTextures(1, &vote_img);
 	if (event_count_img == 0) glGenTextures(1, &event_count_img);
 	if (prng_state_img == 0) glGenTextures(1, &prng_state_img);
-	
 
 	if (world_res != req_world_res) {
 		glBindTexture(GL_TEXTURE_2D, site_bits_img);
@@ -187,9 +184,11 @@ static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 		vote_res = req_vote_res;
 		return true;
 	}
+	*/
 	return false;
 }
 static void initStatsIfNeeded() {
+	/* #PORT
 	// it sounds like these should really be glBufferStorage, but that requires 4.4
 	// https://www.khronos.org/opengl/wiki/Buffer_Object#Immutable_Storage
 	// https://stackoverflow.com/questions/36239869/performance-warning-when-using-glmapbufferrange
@@ -226,8 +225,10 @@ static void initStatsIfNeeded() {
 		glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(ControlState)), &zero_ctrl, GL_STATIC_DRAW);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
+	*/
 }
 static void zeroControlSignals() {
+	/* #PORT
 	// Site Info contains the break flag right now, maybe move it elsewhere
 	SiteInfo zero_info;
 	memset(&zero_info, 0, sizeof(SiteInfo));
@@ -241,8 +242,10 @@ static void zeroControlSignals() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ctrl_state_handle);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)(sizeof(ControlState)), &zero_ctrl, GL_STATIC_DRAW);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	*/
 }
 static void mfmSetUniforms(int stage = 0) {
+	/* #PORT
 	glBindImageTexture(0, site_bits_img, 0, GL_FALSE, 0, GL_READ_WRITE, SITE_FORMAT);
 	glUniform1i(0, 0);
 	glBindImageTexture(1, color_img, 0, GL_FALSE, 0, GL_WRITE_ONLY, COLOR_FORMAT);
@@ -265,17 +268,21 @@ static void mfmSetUniforms(int stage = 0) {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, stats_handles[stats_write_idx]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, site_info_handles[stats_write_idx]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ctrl_state_handle);
+	*/
 }
 static void mfmGPUReset(ivec2 world_res) {
+	/* #PORT
 	mfmSetUniforms(STAGE_RESET);
 	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 	glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
 	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+	*/
 	time_of_reset = time_counter();
 }
 static void mfmComputeStats(ivec2 world_res) {
+	/* #PORT
 	mfmSetUniforms(STAGE_COMPUTE_STATS);
 	gtimer_start("stats");
 	glDispatchCompute((world_res.x / GROUP_SIZE_X) + 1, (world_res.y / GROUP_SIZE_Y) + 1, 1);
@@ -285,8 +292,10 @@ static void mfmComputeStats(ivec2 world_res) {
 		GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
 		GL_TEXTURE_FETCH_BARRIER_BIT          // probably not needed
 	);
+	*/
 }
 static void mfmSiteInfo(ivec2 world_res) {
+	/* #PORT
 	mfmSetUniforms(STAGE_SITE_INFO);
 	gtimer_start("site info");
 	glDispatchCompute(1, 1, 1);
@@ -296,16 +305,20 @@ static void mfmSiteInfo(ivec2 world_res) {
 		GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
 		GL_TEXTURE_FETCH_BARRIER_BIT          // probably not needed
 	);
+	*/
 }
 static void mfmClearStats() {
+	/* #PORT
 	mfmSetUniforms(STAGE_CLEAR_STATS);
 	gtimer_start("clear stats");
 	glDispatchCompute(1, 1, 1);
 	//glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
 	glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
 	gtimer_stop();
+	*/
 }
 static void mfmReadStats() {
+	/* #PORT
 	gtimer_start("read stats");
 	int stats_read_idx = 1 - stats_write_idx;
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, stats_handles[stats_read_idx]);
@@ -317,6 +330,7 @@ static void mfmReadStats() {
 	events_since_reset += stats.event_count_this_batch;
 	stats_write_idx = stats_read_idx;
 	gtimer_stop();
+	*/
 }
 static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_n_dispatches) {
 	if (dispatches_per_batch == 0) return;
@@ -327,6 +341,7 @@ static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 	for (int i = 0; i < dispatches_per_batch; ++i) { 
 		if (stop_at_n_dispatches != 0 && dispatch_counter == stop_at_n_dispatches) break;
 
+		/* #PORT
 		mfmSetUniforms(STAGE_VOTE);
 		gtimer_start("vote");
 		glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
@@ -341,6 +356,7 @@ static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 		//glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // opt, get ready to render
 		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
 		gtimer_stop();
+		*/
 
 		dispatch_counter++;
 	}
@@ -351,14 +367,17 @@ static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_
 }
 
 static void mfmGPURender(ivec2 world_res) {
+	/* #PORT
 	gtimer_start("render");
 	mfmSetUniforms(STAGE_RENDER);
 	glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
 	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 	gtimer_stop();
+	*/
 }
 bool mfmDraw(ivec2 screen_res, ivec2 world_res, pose camera_from_world) {
+	/* #PORT
 	gtimer_start("draw");
 	float s = float(screen_res.y) / float(world_res.y);
 	ivec2 dims = s > 1.0f ? world_res * ivec2(s) : world_res / ivec2(1 + 1.0f/s);
@@ -412,6 +431,7 @@ bool mfmDraw(ivec2 screen_res, ivec2 world_res, pose camera_from_world) {
 		glDisable(GL_FRAMEBUFFER_SRGB);
 	}
 	gtimer_stop();
+	*/
 	return !checkForShaderErrors();
 }
 
@@ -510,7 +530,9 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 		gui::PopButtonRepeat();
 
 	
+	/* #PORT
 	gui::AlignFirstTextHeightToWidgets();
+	*/
 	gui::Text("Speed:"); gui::SameLine();
 	gui::SetCursorPosX(55);
 	gui::RadioButton("1  ",   &gui_set.run_speed, 1); gui::SameLine();
@@ -618,16 +640,27 @@ void guiAtomInspector(Atom A) {
 	}
 }
 
+void mfmInit() {
 
-void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
-	ivec2 screen_res = ivec2(app_res_x, app_res_y);
+}
+void mfmTerm() {
+	world.destroy();
+	computeDestroy();
+	renderDestroy();
+}
+
+static bool hack_reset = true;
+static bool hack_update = true;
+
+void mfmUpdate(Input* main_in) {
+	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
 	
 	bool do_reset = false;
 	bool do_step = false;
 
 	bool mouse_is_onscreen = main_in->mouse.x >= 0 && main_in->mouse.x <= 1.0f && main_in->mouse.y >= 0 && main_in->mouse.y <= 1.0f; 
-	bool mouse_is_using_ui = gui::IsMouseHoveringAnyWindow() || gui::IsAnyItemActive();
-	float camera_aspect = float(app_res_x) / float(app_res_y);
+	bool mouse_is_using_ui = /* #PORT gui::IsMouseHoveringAnyWindow() || */ gui::IsAnyItemActive();
+	float camera_aspect = float(evk.win.Width) / float(evk.win.Height);
 	vec2 camera_from_mouse = (vec2(main_in->mouse.x, main_in->mouse.y)*2.0f - vec2(1.f)) * vec2(camera_aspect, 1.f);
 	vec2 world_from_mouse = ~camera_from_world * camera_from_mouse;
 	ivec2 hover_site_idx = ivec2(world_from_mouse);
@@ -753,7 +786,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		gui::Text("Time:               %3.1f sec", sim_time_since_reset);
 	} gui::End(); 
 
-	drawViewport(0, 0, app_res_x, app_res_y);
+	drawViewport(0, 0, evk.win.Width, evk.win.Height);
 	drawClear(21/255.f, 33/255.f, 54/255.f);
 
 	bool world_hash_changed = resizeWorldIfNeeded(gui_world_res);
@@ -776,6 +809,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 	bool draw_ok = false;
 
 	// update loop
+	/* #PORT
 	if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
 		ctimer_start("update"); 
 
@@ -806,6 +840,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 #endif
 		ctimer_stop();
 	}
+	*/
 	if (site_info.event_ocurred_signal != 0) {
 		log("Break!\n");
 		run = false;
@@ -827,7 +862,9 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 
 	want_stats = false;
 	if (gui::Begin("Statistics")) {
+		/* #PORT
 		gui::AlignFirstTextHeightToWidgets();
+		*/
 		gui::Text("Atom Counts:");
 		gui::SameLine();
 		gui::Checkbox("(show zero counts)", &show_zero_counts);
@@ -866,7 +903,7 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 		gui::RadioButton("basic", &inspect_mode, INSPECT_MODE_BASIC); gui::SameLine();
 		gui::RadioButton("full", &inspect_mode, INSPECT_MODE_FULL);
 		gui::Spacing();
-		if (site_info_idx.x >= 0 && site_info_idx.y >= 0 && site_info_idx.x < world_res.x && site_info_idx.y < world_res.y) {
+		if (site_info_idx.x >= 0 && site_info_idx.y >= 0 && site_info_idx.x < world.size.x && site_info_idx.y < world.size.y) {
 			gui::Text("Site: (%d, %d)", site_info_idx.x, site_info_idx.y);
 			if (inspect_mode == INSPECT_MODE_FULL)
 				gui::Text("dev: %d %d %d %d", site_info.dev.x, site_info.dev.y, site_info.dev.z, site_info.dev.w);
@@ -878,4 +915,33 @@ void mfmUpdate(Input* main_in, int app_res_x, int app_res_y, int refresh_rate) {
 
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
+
+	computeRecreatePipelineIfNeeded();
+	renderRecreatePipelineIfNeeded();
+
+	if (world.size.x == 0) 
+		world.resize(ivec2(128), computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
+
+	if (gui::Begin("HACKS")) {
+		if (gui::Button("reset")) {
+			hack_reset = true;
+		}
+		gui::Checkbox("update", &hack_update);
+	} gui::End();
+}
+
+void mfmCompute(VkCommandBuffer cb) {
+	computeBegin(cb);
+	if (hack_reset) {
+		computeStage(cb, STAGE_RESET, world.size);
+		hack_reset = false;
+	}
+	if (hack_update) {
+		computeStage(cb, STAGE_VOTE, world.voteMapSize());
+		computeStage(cb, STAGE_EVENT, world.size);
+		computeStage(cb, STAGE_RENDER, world.size);
+	}
+}
+void mfmRender(VkCommandBuffer cb) {
+	renderDraw(cb);
 }

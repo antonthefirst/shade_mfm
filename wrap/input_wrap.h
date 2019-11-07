@@ -206,4 +206,6 @@ struct Input {
 	Input();
 };
 
-void inputPoll(Input& in);
+struct GLFWwindow;
+
+void inputPoll(GLFWwindow* gWindow, Input& in);

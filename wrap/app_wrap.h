@@ -1,5 +1,7 @@
 #pragma once
 
+struct GLFWwindow;
+
 struct AppInit
 {
 	int res_x = 0;
@@ -14,13 +16,14 @@ struct AppInit
 
 struct AppState
 {
+	GLFWwindow* window;
 	int res_x = 0;
 	int res_y = 0;
 	int refresh_rate = 0;
 };
 
 int appInit(AppInit init);
-void appGetState(AppState& state);
+GLFWwindow* appGetWindow();
 bool appShouldClose();
 void appSwapBuffers();
 void appTerm();

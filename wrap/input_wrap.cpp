@@ -1,14 +1,13 @@
 #include "input_wrap.h"
 #include "app_wrap.h"
 #include "imgui/imgui.h"
-#include "imgui_impl_glfw_gl3.h" // to pass it the scroll callback
+#include "imgui_impl_glfw.h" // to pass it the scroll callback
 #include <GLFW/glfw3.h>
 #include <string.h> // for memset
 #include <core/maths.h>
 #include <core/log.h>
 #include <string>
-
-extern GLFWwindow* gWindow;
+#include "evk.h"
 
 static bool first_frame = true;
 
@@ -59,15 +58,15 @@ static float applyDeadzone(float v, float joy_deadzone) {
 #endif
 
 
-void inputPoll(Input& in)
+void inputPoll(GLFWwindow* gWindow, Input& in)
 {
 	if (first_frame) {
 		glfwSetScrollCallback(gWindow, scrollCallback);
 		first_frame = false;
 	}
 	glfwPollEvents();
-	AppState s;
-	appGetState(s);
+	
+	ivec2 res = ivec2(evk.win.Width, evk.win.Height);
 
 	//update the "previous"
 	memcpy(keyPrev, in.key.down, sizeof(keyPrev));
@@ -86,9 +85,9 @@ void inputPoll(Input& in)
 	glfwGetCursorPos(gWindow, &fmx, &fmy);
 	int mx = int(floor(fmx));
 	int my = int(floor(fmy));
-	my = int(s.res_y - my);
-	in.mouse.x = float(mx) / float(s.res_x);
-	in.mouse.y = float(my) / float(s.res_y);
+	my = int(res.y - my);
+	in.mouse.x = float(mx) / float(res.x);
+	in.mouse.y = float(my) / float(res.y);
 	in.mouse.dx = in.mouse.x - mouseXPrev;
 	in.mouse.dy = in.mouse.y - mouseYPrev;
 	in.mouse.valid = true;

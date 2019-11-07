@@ -6,7 +6,6 @@
 
 #include "core/log.h" //for log
 
-#include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
 struct GPUCounter {
@@ -36,7 +35,9 @@ void GPUCounterFrame::reserve(int num_counters_desired) {
 		counters = (GPUCounter*)realloc(counters, desired_count * sizeof(GPUCounter));
 		assert(counters);
 		for (int i = max_count; i < desired_count; ++i) {
+			/* #PORT 
 			glGenQueries(1, &counters[i].id);
+			*/
 			counters[i].label = 0;
 		}
 		max_count = desired_count;
@@ -62,7 +63,9 @@ bool GPUCounterFrame::isEmpty() {
 bool GPUCounterFrame::isReady() {
 	assert(count > 0);
 	int res_avail = 0;
+	/* #PORT
 	glGetQueryObjectiv(counters[count-1].id, GL_QUERY_RESULT_AVAILABLE, &res_avail); // check the end query, since if that's ready all the previous ones are too
+	*/
 	return res_avail == GL_TRUE;
 }
 void GPUCounterFrame::querySubmit(const char* label) {
@@ -71,11 +74,15 @@ void GPUCounterFrame::querySubmit(const char* label) {
 		reserve(count + 1);
 	assert(counters);
 	GPUCounter& c = counters[count++];
+	/* #PORT
 	glQueryCounter(c.id, GL_TIMESTAMP);
+	*/
 	c.label = label;
 }
 void GPUCounterFrame::queryGet(int counter, u64* time, const char** label) {
+	/* #PORT
 	glGetQueryObjectui64v(counters[counter].id, GL_QUERY_RESULT, time);
+	*/
 	*label = counters[counter].label;
 }
 void GPUTimer::reset() {

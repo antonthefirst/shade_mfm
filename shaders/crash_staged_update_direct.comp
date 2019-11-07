@@ -1,0 +1,3412 @@
+#version 430 core
+
+#line 1 3
+#if defined(_WIN32) || defined(__GNUC__)
+#pragma once
+typedef unsigned int uint;
+struct uvec4 {
+	unsigned int x,y,z,w;
+};
+#else
+#endif
+
+#define GROUP_SIZE_X 8
+#define GROUP_SIZE_Y 8
+
+#define STAGE_RESET         0
+#define STAGE_CLEAR_STATS   1
+#define STAGE_VOTE          2
+#define STAGE_EVENT         3
+#define STAGE_COMPUTE_STATS 4
+#define STAGE_SITE_INFO     5
+#define STAGE_RENDER        6
+
+#define BITS_PER_COMPONENT 32
+
+#define ATOM_BITS                 96
+#define ATOM_ECC_GLOBAL_OFFSET    87
+#define ATOM_ECC_BITSIZE          9
+#define ATOM_TYPE_GLOBAL_OFFSET   71
+#define ATOM_TYPE_BITSIZE         16
+#define ATOM_TYPE_COMPONENT    (ATOM_TYPE_GLOBAL_OFFSET/BITS_PER_COMPONENT)
+#define ATOM_TYPE_LOCAL_OFFSET (ATOM_TYPE_GLOBAL_OFFSET%BITS_PER_COMPONENT)
+#define ATOM_TYPE_BITMASK       0xffff
+#define SYMMETRY_GLOBAL_OFFSET  86 // upper bit of type
+#define SYMMETRY_COMPONENT      (SYMMETRY_GLOBAL_OFFSET/BITS_PER_COMPONENT)
+#define SYMMETRY_LOCAL_OFFSET   (SYMMETRY_GLOBAL_OFFSET%BITS_PER_COMPONENT)
+#define SYMMETRY_BITSIZE        1
+#define SYMMETRY_BITMASK        0x1
+#define SYMMETRY_SIFT           (SYMMETRY_BITMASK << SYMMETRY_LOCAL_OFFSET)
+
+#define TYPE_COUNTS 32
+
+
+struct WorldStats {
+	uint counts[TYPE_COUNTS];
+	
+	uint event_count_this_batch;
+	uint event_count_min;
+	uint event_count_max;
+	uint pad0;
+
+};
+
+struct SiteInfo {
+	 uvec4 event_layer;
+	 uvec4 base_layer;
+	 uvec4 dev;
+	 int event_ocurred_signal; int site_pad0, site_pad1, site_pad2;
+};
+
+struct ControlState {
+	int supress_events; int event_ocurred; int ctrl_pad1, ctrl_pad2;
+};
+
+#line 1 4
+layout(location = 0, binding = 0, rgba32ui) uniform uimage2D img_site_bits;
+layout(location = 1, binding = 1) uniform writeonly image2D img_color;
+layout(location = 2, binding = 2, rgba32ui) uniform uimage2D img_dev;
+layout(location = 3, binding = 3, r32ui) uniform uimage2D img_vote;
+layout(location = 4, binding = 4, r32ui) uniform uimage2D img_event_count;
+layout(location = 5, binding = 5, rgba32ui) uniform uimage2D img_prng_state;
+
+layout (binding = 0) uniform UBO 
+{
+	uint dispatch_counter;
+	ivec2 site_info_idx;
+	int stage;
+	bool break_on_event;
+} ubo; 
+
+
+
+
+layout(std430, binding = 0) coherent 
+buffer Stats 
+{
+	WorldStats stats;
+};
+layout(std430, binding = 1)
+buffer Site 
+{
+	SiteInfo site_info;
+};
+layout(std430, binding = 2)
+buffer Control 
+{
+	ControlState ctrl;
+};
+
+
+layout (local_size_x = GROUP_SIZE_X, local_size_y = GROUP_SIZE_Y, local_size_z = 1) in;
+#line 1 5
+// mfm constants
+#define EVENT_WINDOW_RADIUS 4
+
+// event window
+#define Symmetry uint
+#define cSYMMETRY_000L (0u)
+#define cSYMMETRY_090L (1u)
+#define cSYMMETRY_180L (2u)
+#define cSYMMETRY_270L (3u)
+#define cSYMMETRY_000R (4u)
+#define cSYMMETRY_090R (5u)
+#define cSYMMETRY_180R (6u)
+#define cSYMMETRY_270R (7u)
+
+// internal datatypes
+#define EventWindow uint
+#define PrngState uint
+#define PrngOutput uint
+
+// basic datatypes
+#define Atom     uvec4
+#define AtomType uint
+#define ARGB     uvec4
+
+#define C2D      ivec2
+#define S2D      uvec2
+#define Unsigned uint
+#define Int      int
+#define Byte     uint
+#define Bool     bool
+
+#define SiteNum uint
+
+#define XoroshiroState uvec4
+
+#define InvalidSiteNum (63)
+#define InvalidAtom (Atom(0))
+
+uint XoroshiroNext32();
+
+#line 1 6
+ivec2 _SITE_IDX;
+XoroshiroState _XORO;
+uint _SYMMETRY;
+#line 1 7
+
+uint random_bits(uint bitsize) {
+	uint bits = XoroshiroNext32();
+	return bitsize == 32 ? bits : bits & ((1 << bitsize) - 1);
+}
+
+// range [0, max), maximum MAX is UINT_MAX
+uint random_create(uint val_max) {
+	// this code is adapted from: http://www.pcg-random.org, basic generator C file (http://www.pcg-random.org/downloads/pcg-c-basic-0.9.zip)
+	// the loop is guaranteed to terminate if the generator is uniform
+	// the chance of this loop re-rolling is roughly proportional to the range
+	// for small ranges up to say 1024, the chance is around 0.00002%, or 1 in 4 million.
+	// for medium ranges of say 2^16, the changes is around 0.002% or 1 in 66 thousand.
+	// so it's safe to say for "most" cases, it will return without actually looping.
+    uint threshold = -val_max % val_max;
+    for (;;) {
+        uint r = XoroshiroNext32();
+        if (r >= threshold)
+            return r % val_max;
+    }
+}
+int random_create(int val_max) {
+	if (val_max <= 0) return 0;
+	return int(random_create(uint(val_max)));
+}
+
+// range [min, max], maximum MAX is UINT_MAX-1
+int random_between(int lo, int hi) {
+	if (lo > hi) {
+      int t = hi;
+      hi = lo;
+      lo = t;
+	}
+	return lo + int(random_create(hi - lo + 1));
+}
+
+bool random_oddsOf(uint thisMany, uint outOfThisMany) {
+	return random_create(outOfThisMany) < thisMany;
+}
+bool random_oddsOf(int thisMany, int outOfThisMany) {
+	return int(random_create(outOfThisMany)) < thisMany;
+}
+bool random_oneIn(uint odds) {
+	return random_oddsOf(uint(1), odds);
+}
+#line 1 0
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Type Defines                                                               +
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#define Void 0
+#define Empty 1
+#define DReg 2
+#define ForkBomb 3
+#define FriendlyForkBomb 4
+#define Res 5
+#define Wall 6
+#define TestCrash 7
+#define TYPE_COUNT 8
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Forward Declarations for Data Members                                      +
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Atom ew(SiteNum i);
+void ew(SiteNum i, Atom S);
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Forward Declarations for Inheritance                                       +
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+bool DReg_behave();
+bool ForkBomb_behave();
+bool FriendlyForkBomb_behave();
+bool Res_behave();
+bool Wall_behave();
+bool TestCrash_behave();
+
+#line 1 8
+
+// site bit packing format:
+// each site is a vector of 4 unsigned integers, x y z w
+
+// X component:
+// [0:7] - Type
+
+// Y component:
+// Z component:
+// W component:
+
+uint _UNPACK_TYPE(Atom A) { return (A[ATOM_TYPE_COMPONENT] >> ATOM_TYPE_LOCAL_OFFSET) & ATOM_TYPE_BITMASK; }
+void _PACK_TYPE(inout Atom A, uint t) { A[ATOM_TYPE_COMPONENT] |= t << ATOM_TYPE_LOCAL_OFFSET; }
+
+Atom new(uint type){
+	Atom A = Atom(0);
+	_PACK_TYPE(A, type);
+	return A;
+}
+#line 1 9
+
+// Math
+
+int taxilen(ivec2 v) { return abs(v.x) + abs(v.y); }
+
+Atom _SITE_LOAD(ivec2 relative_idx) {
+	if (taxilen(relative_idx) <= EVENT_WINDOW_RADIUS) {
+		return imageLoad(img_site_bits, _SITE_IDX + relative_idx);
+	} else {
+		return new(Void);
+	}
+}
+void _SITE_STORE(ivec2 relative_idx, Atom S) {
+	if (taxilen(relative_idx) <= EVENT_WINDOW_RADIUS) {
+		imageStore(img_site_bits, _SITE_IDX + relative_idx, S);
+	}
+}
+void _SITE_SWAP(ivec2 a_idx, ivec2 b_idx) {
+	Atom A = _SITE_LOAD(a_idx);
+	Atom B = _SITE_LOAD(b_idx);
+	if (_UNPACK_TYPE(A) != Void && _UNPACK_TYPE(B) != Void) {
+		_SITE_STORE(a_idx, B);
+		_SITE_STORE(b_idx, A);
+	}
+}
+
+// EventWindow
+
+C2D ew_getCoordRaw(SiteNum i) {
+	switch (i) {
+	case 0:  return ivec2( 0,  0);
+	case 1:  return ivec2(-1,  0);
+	case 2:  return ivec2( 0, -1);
+	case 3:  return ivec2( 0, +1);
+	case 4:  return ivec2(+1,  0);
+	case 5:  return ivec2(-1, -1);
+	case 6:  return ivec2(-1, +1);
+	case 7:  return ivec2(+1, -1);
+	case 8:  return ivec2(+1, +1);
+	case 9:  return ivec2(-2,  0);
+	case 10: return ivec2( 0, -2);
+	case 11: return ivec2( 0, +2);
+	case 12: return ivec2(+2,  0);
+	case 13: return ivec2(-2, -1);
+	case 14: return ivec2(-2, +1);
+	case 15: return ivec2(-1, -2);
+	case 16: return ivec2(-1, +2);
+	case 17: return ivec2(+1, -2);
+	case 18: return ivec2(+1, +2);
+	case 19: return ivec2(+2, -1);
+	case 20: return ivec2(+2, +1);
+	case 21: return ivec2(-3,  0);
+	case 22: return ivec2( 0, -3);
+	case 23: return ivec2( 0,  3);
+	case 24: return ivec2( 3,  0);
+	case 25: return ivec2(-2, -2);
+	case 26: return ivec2(-2, +2);
+	case 27: return ivec2(+2, -2);
+	case 28: return ivec2(+2, +2);
+	case 29: return ivec2(-3, -1);
+	case 30: return ivec2(-3, +1);
+	case 31: return ivec2(-1, -3);
+	case 32: return ivec2(-1, +3);
+	case 33: return ivec2(+1, -3);
+	case 34: return ivec2(+1, +3);
+	case 35: return ivec2(+3, -1);
+	case 36: return ivec2(+3, +1);
+	case 37: return ivec2(-4,  0);
+	case 38: return ivec2( 0, -4);
+	case 39: return ivec2( 0, +4);
+	case 40: return ivec2(+4,  0);
+	default: return ivec2( 0,  0);
+	};
+}
+C2D ew_mapSym(C2D c) {
+	switch(_SYMMETRY) {
+		case cSYMMETRY_000L: return C2D( c.x, c.y);
+		case cSYMMETRY_090L: return C2D(-c.y, c.x);
+		case cSYMMETRY_180L: return C2D(-c.x,-c.y);
+		case cSYMMETRY_270L: return C2D( c.y,-c.x);
+		case cSYMMETRY_000R: return C2D( c.x,-c.y);
+		case cSYMMETRY_090R: return C2D( c.y, c.x);
+		case cSYMMETRY_180R: return C2D(-c.x, c.y);
+		case cSYMMETRY_270R: return C2D(-c.y,-c.x);
+		default: return c; // not ever going to hit, but maybe help the compiler out...
+	};
+}
+C2D ew_mapSym(SiteNum i) { return ew_mapSym(ew_getCoordRaw(i)); }
+
+Atom ew(C2D idx) {
+	return _SITE_LOAD(ew_mapSym(idx));
+}
+void ew(C2D idx, Atom S) {
+	_SITE_STORE(ew_mapSym(idx), S);
+}
+Atom ew(SiteNum i) {
+	return _SITE_LOAD(ew_mapSym(i));
+}
+void ew(SiteNum i, Atom S) {
+	_SITE_STORE(ew_mapSym(i), S);
+}
+void ew_swap(C2D a, C2D b) {
+	_SITE_SWAP(ew_mapSym(a), ew_mapSym(b));
+}
+void ew_swap(SiteNum a, SiteNum b) {
+	_SITE_SWAP(ew_mapSym(a), ew_mapSym(b));
+}
+void ew_changeSymmetry(Symmetry s) {
+	_SYMMETRY = s;
+}
+Symmetry ew_getSymmetry() {
+	return _SYMMETRY;
+}
+bool ew_isLive(C2D c) {
+	return _UNPACK_TYPE(_SITE_LOAD(c)) != Void;
+}
+bool ew_isLive(SiteNum n) {
+	return ew_isLive(ew_mapSym(n));
+}
+bool ew_isEmpty(C2D c) {
+	return _UNPACK_TYPE(_SITE_LOAD(c)) == Empty;
+}
+bool ew_isEmpty(SiteNum n) {
+	return ew_isEmpty(ew_mapSym(n));
+}
+
+Bool ew_isLegal(C2D c) { return taxilen(c) <= EVENT_WINDOW_RADIUS; }
+Bool ew_isLegal(SiteNum n) { return ew_isLegal(ew_mapSym(n)); }
+
+bool is(Atom A, AtomType t) {
+	AtomType A_t = _UNPACK_TYPE(A);
+	if (t == Empty) return A_t == Empty || A_t == Void;
+	else return A_t == t;
+}
+
+
+// ColorUtils
+ARGB cu_color(Byte red, Byte green, Byte blue) {
+	return ARGB(255, red, green, blue);
+}
+
+ARGB cu_color(Unsigned col) {
+	return ARGB((col >> 24) & 0xff, (col >> 16) & 0xff, (col >> 8) & 0xff, col & 0xff);
+}
+
+Atom _atoms[41];
+int _nvotes_0;
+int _nvotes_1;
+int _nvotes_2;
+int _nvotes_3;
+int _nvotes_4;
+int _nvotes_5;
+int _nvotes_6;
+int _nvotes_7;
+
+SiteNum _winsn_0;
+SiteNum _winsn_1;
+SiteNum _winsn_2;
+SiteNum _winsn_3;
+SiteNum _winsn_4;
+SiteNum _winsn_5;
+SiteNum _winsn_6;
+SiteNum _winsn_7;
+
+Atom _winatom_0;
+Atom _winatom_1;
+Atom _winatom_2;
+Atom _winatom_3;
+Atom _winatom_4;
+Atom _winatom_5;
+Atom _winatom_6;
+Atom _winatom_7;
+#line 1 1
+
+//==============================================================================
+//                                                                             |
+//  =element DReg                                                              |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 0 line 3 */
+#line 4 0
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+ @ -> D
+
+
+
+................................................................................
+*/
+
+bool DReg_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void DReg_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool DReg_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+void DReg_rs1_r1_change_keycode68(in SiteNum _cursn) { /* D */
+#define _winsn InvalidSiteNum
+#define _winatom InvalidAtom
+	/* Injected from file 0 line 12 */
+	#line 13 0
+	#define pDREG_CREATE  1000
+	#define pRES_CREATE   200
+	#define pDREG_DESTROY 10
+	#define pANY_DESTROY  100 
+
+	if (is(ew(1), Empty)) {
+		if (random_oneIn(pDREG_CREATE)) ew(1, new(DReg));
+		else if (random_oneIn(pRES_CREATE)) ew(1, new(Res));
+		ew_swap(0, 1);
+	} else if ((is(ew(1), DReg) && random_oneIn(pDREG_DESTROY)) ||
+				random_oneIn(pANY_DESTROY))  {
+		ew(1, new(Empty));
+		ew_swap(0, 1);
+	}
+
+#undef _winatom
+#undef _winsn
+}
+bool DReg_rs1_r1_given() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!DReg_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void DReg_rs1_r1_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: DReg_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+}
+bool DReg_rs1_r1_check() {
+	if (!DReg_rs1_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void DReg_rs1_r1_change() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: DReg_rs1_r1_change_keycode68(sitenum_table[i]); break; /* D */
+		default: break;
+		}
+	}
+}
+bool DReg_rs1_r1() {
+	if (DReg_rs1_r1_given()) {
+		DReg_rs1_r1_vote();
+		if (DReg_rs1_r1_check()) {
+			DReg_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool DReg_rs1() {
+	if (DReg_rs1_r1()) return true;
+	return false;
+}
+bool DReg_behave() {
+	if (DReg_rs1()) return true;
+	return false;
+}
+ARGB DReg_getColor(Unsigned selector) {
+	return cu_color(0,51,51);
+}
+void DReg_EVENT_START() {
+	_SYMMETRY = random_create(8);
+}
+
+
+//==============================================================================
+//                                                                             |
+//  =element ForkBomb                                                          |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 1 line 3 */
+#line 4 1
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+ @. -> @@
+
+
+
+................................................................................
+*/
+
+bool ForkBomb_rs1_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool ForkBomb_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void ForkBomb_rs1_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void ForkBomb_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool ForkBomb_rs1_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool ForkBomb_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void ForkBomb_rs1_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool ForkBomb_rs1_r1_given() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 1, 0,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!ForkBomb_rs1_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!ForkBomb_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void ForkBomb_rs1_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 1, 0,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: ForkBomb_rs1_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: ForkBomb_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool ForkBomb_rs1_r1_check() {
+	if (!ForkBomb_rs1_r1_check_keycode46()) return false; /* . */
+	if (!ForkBomb_rs1_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void ForkBomb_rs1_r1_change() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 0,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: ForkBomb_rs1_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool ForkBomb_rs1_r1() {
+	if (ForkBomb_rs1_r1_given()) {
+		ForkBomb_rs1_r1_vote();
+		if (ForkBomb_rs1_r1_check()) {
+			ForkBomb_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+ @ -> @
+
+
+
+................................................................................
+*/
+
+bool ForkBomb_rs1_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void ForkBomb_rs1_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool ForkBomb_rs1_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+void ForkBomb_rs1_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool ForkBomb_rs1_r2_given() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!ForkBomb_rs1_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void ForkBomb_rs1_r2_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: ForkBomb_rs1_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+}
+bool ForkBomb_rs1_r2_check() {
+	if (!ForkBomb_rs1_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void ForkBomb_rs1_r2_change() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: ForkBomb_rs1_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool ForkBomb_rs1_r2() {
+	if (ForkBomb_rs1_r2_given()) {
+		ForkBomb_rs1_r2_vote();
+		if (ForkBomb_rs1_r2_check()) {
+			ForkBomb_rs1_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool ForkBomb_rs1() {
+	if (ForkBomb_rs1_r1()) return true;
+	if (ForkBomb_rs1_r2()) return true;
+	return false;
+}
+bool ForkBomb_behave() {
+	if (ForkBomb_rs1()) return true;
+	return false;
+}
+ARGB ForkBomb_getColor(Unsigned selector) {
+	return cu_color(170,255,0);
+}
+void ForkBomb_EVENT_START() {
+	_SYMMETRY = random_create(8);
+}
+
+
+//==============================================================================
+//                                                                             |
+//  =element FriendlyForkBomb                                                  |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 2 line 3 */
+#line 4 2
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+ @_ -> @@
+
+
+
+................................................................................
+*/
+
+bool FriendlyForkBomb_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+bool FriendlyForkBomb_rs1_r1_given_keycode95(in SiteNum _cursn) { /* _ */
+	return ew_isEmpty(_cursn);
+}
+void FriendlyForkBomb_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void FriendlyForkBomb_rs1_r1_vote_keycode95(in SiteNum _cursn) { /* _ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool FriendlyForkBomb_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool FriendlyForkBomb_rs1_r1_check_keycode95() { /* _ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void FriendlyForkBomb_rs1_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool FriendlyForkBomb_rs1_r1_given() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 1,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!FriendlyForkBomb_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		case 1: if (!FriendlyForkBomb_rs1_r1_given_keycode95(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void FriendlyForkBomb_rs1_r1_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* _ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 1,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: FriendlyForkBomb_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		case 1: FriendlyForkBomb_rs1_r1_vote_keycode95(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool FriendlyForkBomb_rs1_r1_check() {
+	if (!FriendlyForkBomb_rs1_r1_check_keycode64()) return false; /* @ */
+	if (!FriendlyForkBomb_rs1_r1_check_keycode95()) return false; /* _ */
+	return true;
+}
+void FriendlyForkBomb_rs1_r1_change() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 0,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: FriendlyForkBomb_rs1_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool FriendlyForkBomb_rs1_r1() {
+	if (FriendlyForkBomb_rs1_r1_given()) {
+		FriendlyForkBomb_rs1_r1_vote();
+		if (FriendlyForkBomb_rs1_r1_check()) {
+			FriendlyForkBomb_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+ @ -> @
+
+
+
+................................................................................
+*/
+
+bool FriendlyForkBomb_rs1_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void FriendlyForkBomb_rs1_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool FriendlyForkBomb_rs1_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+void FriendlyForkBomb_rs1_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool FriendlyForkBomb_rs1_r2_given() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!FriendlyForkBomb_rs1_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void FriendlyForkBomb_rs1_r2_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: FriendlyForkBomb_rs1_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+}
+bool FriendlyForkBomb_rs1_r2_check() {
+	if (!FriendlyForkBomb_rs1_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void FriendlyForkBomb_rs1_r2_change() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: FriendlyForkBomb_rs1_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool FriendlyForkBomb_rs1_r2() {
+	if (FriendlyForkBomb_rs1_r2_given()) {
+		FriendlyForkBomb_rs1_r2_vote();
+		if (FriendlyForkBomb_rs1_r2_check()) {
+			FriendlyForkBomb_rs1_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool FriendlyForkBomb_rs1() {
+	if (FriendlyForkBomb_rs1_r1()) return true;
+	if (FriendlyForkBomb_rs1_r2()) return true;
+	return false;
+}
+bool FriendlyForkBomb_behave() {
+	if (FriendlyForkBomb_rs1()) return true;
+	return false;
+}
+ARGB FriendlyForkBomb_getColor(Unsigned selector) {
+	return cu_color(255,170,170);
+}
+void FriendlyForkBomb_EVENT_START() {
+	_SYMMETRY = random_create(8);
+}
+
+
+//==============================================================================
+//                                                                             |
+//  =element Res                                                               |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 3 line 3 */
+#line 4 3
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+ @_ -> _@
+
+
+
+................................................................................
+*/
+
+bool Res_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+bool Res_rs1_r1_given_keycode95(in SiteNum _cursn) { /* _ */
+	return ew_isEmpty(_cursn);
+}
+void Res_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void Res_rs1_r1_vote_keycode95(in SiteNum _cursn) { /* _ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool Res_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool Res_rs1_r1_check_keycode95() { /* _ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void Res_rs1_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+void Res_rs1_r1_change_keycode95(in SiteNum _cursn) { /* _ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, new(Empty));
+#undef _winatom
+#undef _winsn
+}
+bool Res_rs1_r1_given() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 1,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!Res_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		case 1: if (!Res_rs1_r1_given_keycode95(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void Res_rs1_r1_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* _ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 0, 1,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Res_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		case 1: Res_rs1_r1_vote_keycode95(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool Res_rs1_r1_check() {
+	if (!Res_rs1_r1_check_keycode64()) return false; /* @ */
+	if (!Res_rs1_r1_check_keycode95()) return false; /* _ */
+	return true;
+}
+void Res_rs1_r1_change() {
+	const int sitenum_table[2] = { 0, 4,	};
+	const int dispatch_table[2] = { 1, 0,	};
+	for (int i = 0; i < 2; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Res_rs1_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		case 1: Res_rs1_r1_change_keycode95(sitenum_table[i]); break; /* _ */
+		default: break;
+		}
+	}
+}
+bool Res_rs1_r1() {
+	if (Res_rs1_r1_given()) {
+		Res_rs1_r1_vote();
+		if (Res_rs1_r1_check()) {
+			Res_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+ @ -> @
+
+
+
+................................................................................
+*/
+
+bool Res_rs1_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void Res_rs1_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool Res_rs1_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+void Res_rs1_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool Res_rs1_r2_given() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!Res_rs1_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void Res_rs1_r2_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Res_rs1_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+}
+bool Res_rs1_r2_check() {
+	if (!Res_rs1_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void Res_rs1_r2_change() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Res_rs1_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool Res_rs1_r2() {
+	if (Res_rs1_r2_given()) {
+		Res_rs1_r2_vote();
+		if (Res_rs1_r2_check()) {
+			Res_rs1_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool Res_rs1() {
+	if (Res_rs1_r1()) return true;
+	if (Res_rs1_r2()) return true;
+	return false;
+}
+bool Res_behave() {
+	if (Res_rs1()) return true;
+	return false;
+}
+ARGB Res_getColor(Unsigned selector) {
+	return cu_color(96,102,46);
+}
+void Res_EVENT_START() {
+	_SYMMETRY = random_create(8);
+}
+
+
+//==============================================================================
+//                                                                             |
+//  =element Wall                                                              |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 4 line 3 */
+#line 4 4
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+ @ -> @
+
+
+
+................................................................................
+*/
+
+bool Wall_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void Wall_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool Wall_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+void Wall_rs1_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_0
+#define _winatom _winatom_0
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool Wall_rs1_r1_given() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!Wall_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void Wall_rs1_r1_vote() {
+	_nvotes_0 = 0; /* @ */
+	_winsn_0 = InvalidSiteNum;
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Wall_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+}
+bool Wall_rs1_r1_check() {
+	if (!Wall_rs1_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void Wall_rs1_r1_change() {
+	const int sitenum_table[1] = { 0,	};
+	const int dispatch_table[1] = { 0,	};
+	for (int i = 0; i < 1; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: Wall_rs1_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool Wall_rs1_r1() {
+	if (Wall_rs1_r1_given()) {
+		Wall_rs1_r1_vote();
+		if (Wall_rs1_r1_check()) {
+			Wall_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool Wall_rs1() {
+	if (Wall_rs1_r1()) return true;
+	return false;
+}
+bool Wall_behave() {
+	if (Wall_rs1()) return true;
+	return false;
+}
+ARGB Wall_getColor(Unsigned selector) {
+	return cu_color(255,255,255);
+}
+void Wall_EVENT_START() {
+	_SYMMETRY = 0;
+}
+
+
+//==============================================================================
+//                                                                             |
+//  = element TestCrash                                                        |
+//                                                                             |
+//==============================================================================
+
+/* Injected from file 5 line 1 */
+#line 2 5
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs1_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs1_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs1_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs1_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs1_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs1_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs1_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs1_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs1_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs1_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs1_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs1_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs1_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs1_r1_check() {
+	if (!TestCrash_rs1_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs1_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs1_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs1_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs1_r1() {
+	if (TestCrash_rs1_r1_given()) {
+		TestCrash_rs1_r1_vote();
+		if (TestCrash_rs1_r1_check()) {
+			TestCrash_rs1_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs1_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs1_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs1_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs1_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs1_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs1_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs1_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs1_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs1_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs1_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs1_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs1_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs1_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs1_r2_check() {
+	if (!TestCrash_rs1_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs1_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs1_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs1_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs1_r2() {
+	if (TestCrash_rs1_r2_given()) {
+		TestCrash_rs1_r2_vote();
+		if (TestCrash_rs1_r2_check()) {
+			TestCrash_rs1_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs1() {
+	if (TestCrash_rs1_r1()) return true;
+	if (TestCrash_rs1_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs2_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs2_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs2_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs2_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs2_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs2_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs2_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs2_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs2_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs2_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs2_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs2_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs2_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs2_r1_check() {
+	if (!TestCrash_rs2_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs2_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs2_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs2_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs2_r1() {
+	if (TestCrash_rs2_r1_given()) {
+		TestCrash_rs2_r1_vote();
+		if (TestCrash_rs2_r1_check()) {
+			TestCrash_rs2_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs2_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs2_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs2_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs2_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs2_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs2_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs2_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs2_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs2_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs2_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs2_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs2_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs2_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs2_r2_check() {
+	if (!TestCrash_rs2_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs2_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs2_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs2_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs2_r2() {
+	if (TestCrash_rs2_r2_given()) {
+		TestCrash_rs2_r2_vote();
+		if (TestCrash_rs2_r2_check()) {
+			TestCrash_rs2_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs2() {
+	if (TestCrash_rs2_r1()) return true;
+	if (TestCrash_rs2_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs3_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs3_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs3_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs3_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs3_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs3_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs3_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs3_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs3_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs3_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs3_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs3_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs3_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs3_r1_check() {
+	if (!TestCrash_rs3_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs3_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs3_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs3_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs3_r1() {
+	if (TestCrash_rs3_r1_given()) {
+		TestCrash_rs3_r1_vote();
+		if (TestCrash_rs3_r1_check()) {
+			TestCrash_rs3_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs3_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs3_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs3_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs3_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs3_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs3_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs3_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs3_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs3_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs3_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs3_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs3_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs3_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs3_r2_check() {
+	if (!TestCrash_rs3_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs3_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs3_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs3_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs3_r2() {
+	if (TestCrash_rs3_r2_given()) {
+		TestCrash_rs3_r2_vote();
+		if (TestCrash_rs3_r2_check()) {
+			TestCrash_rs3_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs3() {
+	if (TestCrash_rs3_r1()) return true;
+	if (TestCrash_rs3_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs4_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs4_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs4_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs4_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs4_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs4_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs4_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs4_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs4_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs4_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs4_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs4_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs4_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs4_r1_check() {
+	if (!TestCrash_rs4_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs4_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs4_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs4_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs4_r1() {
+	if (TestCrash_rs4_r1_given()) {
+		TestCrash_rs4_r1_vote();
+		if (TestCrash_rs4_r1_check()) {
+			TestCrash_rs4_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs4_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs4_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs4_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs4_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs4_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs4_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs4_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs4_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs4_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs4_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs4_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs4_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs4_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs4_r2_check() {
+	if (!TestCrash_rs4_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs4_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs4_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs4_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs4_r2() {
+	if (TestCrash_rs4_r2_given()) {
+		TestCrash_rs4_r2_vote();
+		if (TestCrash_rs4_r2_check()) {
+			TestCrash_rs4_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs4() {
+	if (TestCrash_rs4_r1()) return true;
+	if (TestCrash_rs4_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs5_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs5_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs5_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs5_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs5_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs5_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs5_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs5_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs5_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs5_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs5_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs5_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs5_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs5_r1_check() {
+	if (!TestCrash_rs5_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs5_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs5_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs5_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs5_r1() {
+	if (TestCrash_rs5_r1_given()) {
+		TestCrash_rs5_r1_vote();
+		if (TestCrash_rs5_r1_check()) {
+			TestCrash_rs5_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs5_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs5_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs5_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs5_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs5_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs5_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs5_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs5_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs5_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs5_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs5_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs5_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs5_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs5_r2_check() {
+	if (!TestCrash_rs5_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs5_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs5_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs5_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs5_r2() {
+	if (TestCrash_rs5_r2_given()) {
+		TestCrash_rs5_r2_vote();
+		if (TestCrash_rs5_r2_check()) {
+			TestCrash_rs5_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs5() {
+	if (TestCrash_rs5_r1()) return true;
+	if (TestCrash_rs5_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs6_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs6_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs6_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs6_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs6_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs6_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs6_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs6_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs6_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs6_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs6_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs6_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs6_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs6_r1_check() {
+	if (!TestCrash_rs6_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs6_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs6_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs6_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs6_r1() {
+	if (TestCrash_rs6_r1_given()) {
+		TestCrash_rs6_r1_vote();
+		if (TestCrash_rs6_r1_check()) {
+			TestCrash_rs6_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs6_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs6_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs6_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs6_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs6_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs6_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs6_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs6_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs6_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs6_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs6_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs6_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs6_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs6_r2_check() {
+	if (!TestCrash_rs6_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs6_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs6_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs6_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs6_r2() {
+	if (TestCrash_rs6_r2_given()) {
+		TestCrash_rs6_r2_vote();
+		if (TestCrash_rs6_r2_check()) {
+			TestCrash_rs6_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs6() {
+	if (TestCrash_rs6_r1()) return true;
+	if (TestCrash_rs6_r2()) return true;
+	return false;
+}
+
+//------------------------------------------------------------------------------
+//  == Rules                                                                   |
+//------------------------------------------------------------------------------
+/* Rule 1:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+
+................................................................................
+*/
+
+bool TestCrash_rs7_r1_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs7_r1_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs7_r1_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs7_r1_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs7_r1_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs7_r1_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs7_r1_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs7_r1_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs7_r1_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs7_r1_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs7_r1_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs7_r1_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs7_r1_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs7_r1_check() {
+	if (!TestCrash_rs7_r1_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs7_r1_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs7_r1_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs7_r1_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs7_r1() {
+	if (TestCrash_rs7_r1_given()) {
+		TestCrash_rs7_r1_vote();
+		if (TestCrash_rs7_r1_check()) {
+			TestCrash_rs7_r1_change();
+			return true;
+		}
+	}
+	return false;
+}
+/* Rule 2:
+................................................................................
+
+     .            @
+    ...          @@@
+   .....        @@@@@
+  .......      @@@@@@@
+ ....@.... -> @@@@@@@@@
+  .......      @@@@@@@
+   .....        @@@@@
+    ...          @@@
+     .            @
+
+
+................................................................................
+*/
+
+bool TestCrash_rs7_r2_given_keycode46(in SiteNum _cursn) { /* . */
+	return ew_isLive(_cursn);
+}
+bool TestCrash_rs7_r2_given_keycode64(in SiteNum _cursn) { /* @ */
+	return true;
+}
+void TestCrash_rs7_r2_vote_keycode46(in SiteNum _cursn) { /* . */
+#define _nvotes _nvotes_0
+#define _winsn _winsn_0
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+void TestCrash_rs7_r2_vote_keycode64(in SiteNum _cursn) { /* @ */
+#define _nvotes _nvotes_1
+#define _winsn _winsn_1
+	int myvotes = 1;
+	_nvotes += myvotes;
+	if (random_create(int(_nvotes)) < myvotes) { _winsn = _cursn; }
+#undef _winsn
+#undef _nvotes
+}
+bool TestCrash_rs7_r2_check_keycode46() { /* . */
+#define _nvotes _nvotes_0
+	return _nvotes > 0;
+#undef _nvotes
+}
+bool TestCrash_rs7_r2_check_keycode64() { /* @ */
+#define _nvotes _nvotes_1
+	return _nvotes > 0;
+#undef _nvotes
+}
+void TestCrash_rs7_r2_change_keycode64(in SiteNum _cursn) { /* @ */
+#define _winsn _winsn_1
+#define _winatom _winatom_1
+	ew(_cursn, _winatom); // Default
+#undef _winatom
+#undef _winsn
+}
+bool TestCrash_rs7_r2_given() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: if (!TestCrash_rs7_r2_given_keycode46(sitenum_table[i])) return false; break;
+		case 1: if (!TestCrash_rs7_r2_given_keycode64(sitenum_table[i])) return false; break;
+		default: break;
+		}
+	}
+	return true;
+}
+void TestCrash_rs7_r2_vote() {
+	_nvotes_0 = 0; /* . */
+	_winsn_0 = InvalidSiteNum;
+	_nvotes_1 = 0; /* @ */
+	_winsn_1 = InvalidSiteNum;
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs7_r2_vote_keycode46(sitenum_table[i]); break;
+		case 1: TestCrash_rs7_r2_vote_keycode64(sitenum_table[i]); break;
+		default: break;
+		}
+	}
+	_winatom_0 = (_winsn_0 != 63) ? ew(_winsn_0) : new(Void);
+	_winatom_1 = (_winsn_1 != 63) ? ew(_winsn_1) : new(Void);
+}
+bool TestCrash_rs7_r2_check() {
+	if (!TestCrash_rs7_r2_check_keycode46()) return false; /* . */
+	if (!TestCrash_rs7_r2_check_keycode64()) return false; /* @ */
+	return true;
+}
+void TestCrash_rs7_r2_change() {
+	const int sitenum_table[41] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,	};
+	const int dispatch_table[41] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	};
+	for (int i = 0; i < 41; ++i) {
+		switch (dispatch_table[i]) {
+		case 0: TestCrash_rs7_r2_change_keycode64(sitenum_table[i]); break; /* @ */
+		default: break;
+		}
+	}
+}
+bool TestCrash_rs7_r2() {
+	if (TestCrash_rs7_r2_given()) {
+		TestCrash_rs7_r2_vote();
+		if (TestCrash_rs7_r2_check()) {
+			TestCrash_rs7_r2_change();
+			return true;
+		}
+	}
+	return false;
+}
+bool TestCrash_rs7() {
+	if (TestCrash_rs7_r1()) return true;
+	if (TestCrash_rs7_r2()) return true;
+	return false;
+}
+bool TestCrash_behave() {
+	if (TestCrash_rs1()) return true;
+	if (TestCrash_rs2()) return true;
+	if (TestCrash_rs3()) return true;
+	if (TestCrash_rs4()) return true;
+	if (TestCrash_rs5()) return true;
+	if (TestCrash_rs6()) return true;
+	if (TestCrash_rs7()) return true;
+	return false;
+}
+ARGB TestCrash_getColor(Unsigned selector) {
+	return cu_color(255,170,255);
+}
+void TestCrash_EVENT_START() {
+	_SYMMETRY = 0;
+}
+
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//  Dispatches                                                                 +
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+void _BEHAVE_DISPATCH(uint type) {
+	switch(type) {
+		case DReg: DReg_EVENT_START(); DReg_behave(); break;
+		case ForkBomb: ForkBomb_EVENT_START(); ForkBomb_behave(); break;
+		case FriendlyForkBomb: FriendlyForkBomb_EVENT_START(); FriendlyForkBomb_behave(); break;
+		case Res: Res_EVENT_START(); Res_behave(); break;
+		case Wall: Wall_EVENT_START(); Wall_behave(); break;
+		case TestCrash: TestCrash_EVENT_START(); TestCrash_behave(); break;
+		default: break;
+	}
+}
+ARGB _COLOR_DISPATCH(uint type) {
+	switch(type) {
+		case Void: return uvec4(255,255,0,255);
+		case Empty: return uvec4(255,0,0,0);
+		case DReg: return DReg_getColor(0);
+		case ForkBomb: return ForkBomb_getColor(0);
+		case FriendlyForkBomb: return FriendlyForkBomb_getColor(0);
+		case Res: return Res_getColor(0);
+		case Wall: return Wall_getColor(0);
+		case TestCrash: return TestCrash_getColor(0);
+		default: return uvec4(255,0,255,255);
+	}
+}
+
+void Init(C2D c, S2D s) {
+	Atom S = new(Empty);
+
+#if 1 // center test
+	if (c == s/2) {
+		S = new(TestCrash);
+	} 
+#endif
+
+	ew(0, S); 
+}
+#line 1 10
+uint SplitMix32(inout uint state) {
+	uint b = (state += 0x9e3779b9);
+	b ^= b >> 15;
+	b *= 0x85ebca6b;
+	b ^= b >> 13;
+	b *= 0xc2b2ae3d;
+	b ^= b >> 16;
+	return b;
+}
+
+#line 1 11
+// from http://xoshiro.di.unimi.it/xoshiro128starstar.c
+
+uint xororotl(uint x, int k) {
+	return (x << k) | (x >> (32 - k));
+}
+XoroshiroState xoroshiro128_unpack(uvec4 v) {
+	return v;
+}
+uvec4 xoroshiro128_pack(XoroshiroState X) {
+	return X;
+}
+uint XoroshiroNext32() {
+	uint result_starstar = xororotl(_XORO[0] * 5, 7) * 9;
+	uint t = _XORO[1] << 9;
+
+	_XORO[2] ^= _XORO[0];
+	_XORO[3] ^= _XORO[1];
+	_XORO[1] ^= _XORO[2];
+	_XORO[0] ^= _XORO[3];
+
+	_XORO[2] ^= t;
+
+	_XORO[3] = xororotl(_XORO[3], 11);
+
+	return result_starstar;
+}
+
+#line 1 2
+//include "cpu_gpu_shared.inl"
+//include "uniforms.inl"
+//include "defines.inl"
+//include "globals.inl"
+//include "prng.inl"
+//include "atom_decls.inl"
+//include "bit_packing.inl"
+//include "sites.inl"
+//include "atoms.inl"
+//include "splitmix32.inl"
+//include "xoroshiro128starstar.inl"
+
+bool isActiveMem(ivec2 vote_idx);
+void MEGA_RNG();
+
+void main() {
+	if (ubo.stage == STAGE_RESET) {
+		ivec2 prng_idx = ivec2(gl_GlobalInvocationID.xy);
+		ivec2 world_size = imageSize(img_site_bits);
+		ivec2 prng_size = imageSize(img_prng_state);
+		if (prng_idx.x < prng_size.x && prng_idx.y < prng_size.y) {
+			// seed the prng state
+			uint state = prng_idx.x + prng_idx.y * prng_size.x;
+			uint smix = SplitMix32(state);
+			_XORO[0] = SplitMix32(state);
+			_XORO[1] = SplitMix32(state);
+			_XORO[2] = SplitMix32(state);
+			_XORO[3] = SplitMix32(state);
+			// crank it a bit just in case to decorrelate
+			for (int i = 0; i < 128; ++i)
+				XoroshiroNext32();
+		
+
+			if (prng_idx.x >= EVENT_WINDOW_RADIUS && prng_idx.y >= EVENT_WINDOW_RADIUS &&
+				prng_idx.x < (prng_size.x - EVENT_WINDOW_RADIUS) && prng_idx.y < (prng_size.y - EVENT_WINDOW_RADIUS)) {
+			
+				ivec2 site_idx = prng_idx - ivec2(EVENT_WINDOW_RADIUS);
+				_SITE_IDX = site_idx;
+				_SYMMETRY = cSYMMETRY_000L;
+				uint tick_counter = ubo.dispatch_counter;
+
+				ew(0, new(Empty));
+				Init(site_idx, world_size);
+
+				imageStore(img_event_count, site_idx, uvec4(0));
+				imageStore(img_dev, site_idx, uvec4(uint(smix&0xffffffff), uint((smix>>32)&0xffffffff), 0, 0));
+			}
+
+			imageStore(img_prng_state, prng_idx, xoroshiro128_pack(_XORO));
+		}
+	} else if (ubo.stage == STAGE_CLEAR_STATS) {
+		if (gl_GlobalInvocationID.xy == uvec2(0)) {
+			for (int i = 0; i < TYPE_COUNT; ++i)
+				stats.counts[i] = 0;
+			stats.event_count_this_batch = 0;
+			stats.event_count_min = 0xffffffff;
+			stats.event_count_max = 0;
+
+			site_info.event_layer = uvec4(0);
+			site_info.base_layer = uvec4(0);
+			site_info.dev = uvec4(0);
+
+			if (ctrl.event_ocurred == 1)
+				ctrl.supress_events = 1;
+		}
+	} else if (ubo.stage == STAGE_VOTE) {
+		uvec2 size = imageSize(img_vote);
+		ivec2 vote_idx = ivec2(gl_GlobalInvocationID.xy);
+
+		if (vote_idx.x < size.x && vote_idx.y < size.y) { 
+			_XORO = xoroshiro128_unpack(imageLoad(img_prng_state, vote_idx));
+			uint center_v = XoroshiroNext32();
+			imageStore(img_vote, vote_idx, uvec4(center_v));
+			imageStore(img_prng_state, vote_idx, xoroshiro128_pack(_XORO));
+		}
+	} else if (ubo.stage == STAGE_EVENT) {
+		if (ctrl.supress_events != 0) // This guards against 'updates after break' which can happen before the CPU sees the event_ocurred_signal, and has had a chance to stop dispatching
+			return;
+
+		uvec2 size = imageSize(img_site_bits);
+		ivec2 center_idx = ivec2(gl_GlobalInvocationID.xy);
+
+		// threads may be scheduled "off the image" because they come in blocks, so make sure our thread is actually on top of a valid site
+		if (center_idx.x < size.x && center_idx.y < size.y) {
+			_SITE_IDX = center_idx;
+			ivec2 vote_idx = _SITE_IDX +  ivec2(EVENT_WINDOW_RADIUS*2);				
+			uvec4 D = uvec4(0);
+			if  (isActiveMem(vote_idx)) {
+				_XORO = xoroshiro128_unpack(imageLoad(img_prng_state, vote_idx));
+				
+				//for (int i = 0; i < 8; ++i)
+				//	_atoms[i] = _SITE_LOAD(ew_getCoordRaw(i));
+				Atom S = _SITE_LOAD(ivec2(0,0));
+				AtomType T = _UNPACK_TYPE(S);
+				_BEHAVE_DISPATCH(T);
+				//MEGA_RNG();
+
+				D.z = 1; // #HACK site updated signal
+				
+				if (ubo.break_on_event && T != Empty && T != Void) {
+					ctrl.event_ocurred = 1;
+					site_info.event_ocurred_signal = 1;
+				}
+
+				atomicAdd(stats.event_count_this_batch, 1);
+				
+				uint event_count = imageLoad(img_event_count, center_idx).x;
+				event_count += 1;
+				imageStore(img_event_count, center_idx, uvec4(event_count));
+				imageStore(img_prng_state, vote_idx, xoroshiro128_pack(_XORO));
+				
+			}
+			imageStore(img_dev, center_idx, D);
+		}
+	} else if (ubo.stage == STAGE_COMPUTE_STATS) {
+		uvec2 size = imageSize(img_site_bits);
+		ivec2 center_idx = ivec2(gl_GlobalInvocationID.xy);
+		uint type = 0;
+		uint count = 0;
+		if (center_idx.x < size.x && center_idx.y < size.y) { 
+			_SITE_IDX = center_idx;
+			_SYMMETRY = cSYMMETRY_000L;
+			Atom A = _SITE_LOAD(ivec2(0));
+			type = min(_UNPACK_TYPE(A), TYPE_COUNTS-1);
+			count = 1;
+
+			//uint event_count = imageLoad(img_event_count, center_idx).x;
+			//atomicMin(stats.event_count_min, event_count);
+			//atomicMax(stats.event_count_max, event_count);
+		}
+		atomicAdd(stats.counts[type], count);
+	} else if (ubo.stage == STAGE_SITE_INFO) {
+		if (gl_GlobalInvocationID.xy == uvec2(0)) {
+			_SITE_IDX = ubo.site_info_idx;
+			_SYMMETRY = cSYMMETRY_000L;
+			Atom A = _SITE_LOAD(ivec2(0));
+			site_info.event_layer = A;
+
+			//uvec4 D = imageLoad(img_dev, center_idx);
+			//site_info.dev = D;
+		}
+	} else if (ubo.stage == STAGE_RENDER) {
+		uvec2 size = imageSize(img_site_bits);
+		ivec2 center_idx = ivec2(gl_GlobalInvocationID.xy);
+		if (center_idx.x < size.x && center_idx.y < size.y) { 
+
+			// rendering does not support rng, reading from any site other than 0, and hence doesn't require symmetry randomization
+			_SITE_IDX = center_idx;
+			_SYMMETRY = cSYMMETRY_000L;
+		
+			ARGB argb = _COLOR_DISPATCH(_UNPACK_TYPE(imageLoad(img_site_bits, center_idx)));
+
+			vec4 col = vec4(argb.yzwx) / 255.0;
+	#if 0
+			uvec4 R = imageLoad(img_prng_state, center_idx);
+			col = mix(col, vec4(vec3(float((R.w>>0)&0xff)/255.0), 1.0), 0.5);
+	#endif
+	#if 0
+			uint event_count = imageLoad(img_event_count, center_idx).x;
+			col = mix(col, vec4(vec3(float(event_count) / 40.0), 1.0), 0.5);;
+	#endif
+
+	#if 0
+			uint event_count = imageLoad(img_event_count, center_idx).x;
+			col = vec4(vec3(float(event_count) / 100.0), 1.0);
+	#endif
+	#if 0
+			uvec4 R = imageLoad(img_prng_state, center_idx);
+			col = vec4(vec3(float((R.w>>0)&0xff)/255.0), 1.0);
+	#endif
+	#if 0
+			uvec4 R = imageLoad(img_vote, center_idx);
+			col = vec4(vec3(float((R.x>>0)&0xff)/255.0), 1.0);
+	#endif
+			if (center_idx.x == ubo.site_info_idx.x && center_idx.y == ubo.site_info_idx.y)
+				col = vec4(1.0);
+			imageStore(img_color, ivec2(center_idx.x, size.y - 1 - center_idx.y), col); //#Y-DOWN
+		}
+	}
+}
+
+// #OPT if the const R is replaced by a uniform to prevent unroll, this goes ~40% slower, and compile times are unaffected :( 
+bool isActiveMem(ivec2 vote_idx) {
+	uint center_v = imageLoad(img_vote, vote_idx).x;
+#if 0
+	const int R = EVENT_WINDOW_RADIUS*2;
+    for (int y = -R; y <= R; ++y) {
+        for (int x = -R; x <= R; ++x) {
+            int m = abs(x) + abs(y);
+            if (m <= R && !(x == 0 && y == 0)) {
+				uint v = imageLoad(img_vote, vote_idx + ivec2(x,y)).x;
+                if (v >= center_v) {
+                    return false;
+                }
+            }
+        }
+    }
+#else // #OPT generated minimal version of the above code, 24% faster. bizarrely, this is faster than "spiral from center" ordering by nearly 24% on 4k grids (seems to be identical on 128 grids) 
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-8)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,-2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,-1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-8,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+8,+0)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-7,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+7,+1)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-6,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+6,+2)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-5,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+5,+3)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-4,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+4,+4)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-3,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+3,+5)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-2,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+2,+6)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(-1,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+1,+7)).x >= center_v) return false;
+	if (imageLoad(img_vote, vote_idx + ivec2(+0,+8)).x >= center_v) return false;
+#endif
+	return true;
+}
+
+void MEGA_RNG() { 
+}

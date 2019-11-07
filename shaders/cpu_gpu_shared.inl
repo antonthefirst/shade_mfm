@@ -37,7 +37,6 @@ struct uvec4 {
 
 #define TYPE_COUNTS 32
 
-
 struct WorldStats {
 	uint counts[TYPE_COUNTS];
 	
@@ -57,4 +56,17 @@ struct SiteInfo {
 
 struct ControlState {
 	int supress_events; int event_ocurred; int ctrl_pad1, ctrl_pad2;
+};
+
+#ifdef _WIN32
+typedef unsigned int uint;
+#endif
+
+#ifdef _WIN32
+struct ComputeUPC {
+#else
+layout(push_constant) uniform UPC {
+#endif
+	uint dispatch_counter; uint stage; ivec2 site_info_idx;
+	bool break_on_event;
 };

@@ -6,7 +6,6 @@
 #include "core/string_range.h"
 #include "core/file_stat.h"
 
-#include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
 
@@ -99,12 +98,14 @@ static int getFileEntry(StringRange pathfile, bool is_main) {
 		ShaderEntry s;
 		s.file_idx = idx;
 		const char* ext_str = pathfile.str + pathfile.len - min(size_t(4), pathfile.len);
+		/* #PORT
 		if (strcmp(ext_str, "vert") == 0) s.type = GL_VERTEX_SHADER;
 		else if (strcmp(ext_str, "frag") == 0) s.type = GL_FRAGMENT_SHADER;
 		else if (strcmp(ext_str, "comp") == 0) s.type = GL_COMPUTE_SHADER;
 		else if (strcmp(ext_str, "geom") == 0) s.type = GL_GEOMETRY_SHADER;
 		else if (strcmp(ext_str, "ctrl") == 0) s.type = GL_TESS_CONTROL_SHADER;
 		else if (strcmp(ext_str, "eval") == 0) s.type = GL_TESS_EVALUATION_SHADER;
+		*/
 		shader_idx = shader_entries.size();
 		shader_entries.push_back(s);
 	}
@@ -374,6 +375,7 @@ static void checkAllFilesForUpdates() {
 				continue;
 			}
 			
+#if 0 //#PORT
 			s64 t_start = time_counter();
 			if (s.handle == 0) s.handle = glCreateShader(s.type);
 
@@ -459,6 +461,7 @@ static void checkAllFilesForUpdates() {
 				any_errors_since_last_check = true;
 			} 
 			s.time_to_compile = time_counter() - t_start; // do this after Get COMPILE_STATUS because that seems to actually block waiting for compiler to finish
+#endif
 		}
 	}
 	for (int i = 0; i < (int)prog_entries.size(); ++i) {
@@ -476,6 +479,7 @@ static void checkAllFilesForUpdates() {
 			if (any_zero) 
 				continue;
 
+#if 0 //#PORT
 			s64 t_start = time_counter();
 			int new_handle = glCreateProgram();
 
@@ -514,6 +518,7 @@ static void checkAllFilesForUpdates() {
 				any_errors_since_last_check = true;
 			}
 			p.time_to_link = time_counter() - t_start; // do this after Get LINK_STATUS because that seems to actually block waiting for compiler to finish
+#endif
 		}
 	}
 }
@@ -577,7 +582,9 @@ bool useProgram(const char* vert, const char* frag, ProgramStats* stats) {
 	checkAllFilesForUpdates(); // could potentially limit this to just the files "vert" and "frag" care about, but it's probably not worth it right now (if you're changing files, you're probably changing the ones you care about here anyway, and those that aren't changing early out on stat)
 	if (prog_entries[prog_idx].handle) {
 		programStats(stats, prog_idx);
+		/* #PORT
 		glUseProgram(prog_entries[prog_idx].handle);
+		*/
 		return true;
 	} else {
 		return false;
@@ -588,7 +595,9 @@ bool useProgram(const char* comp, ProgramStats* stats) {
 	checkAllFilesForUpdates(); // could potentially limit this to just the files "vert" and "frag" care about, but it's probably not worth it right now (if you're changing files, you're probably changing the ones you care about here anyway, and those that aren't changing early out on stat)
 	programStats(stats, prog_idx);
 	if (prog_entries[prog_idx].handle) {
+		/* #PORT
 		glUseProgram(prog_entries[prog_idx].handle);
+		*/
 		return true;
 	}
 	else {
@@ -800,6 +809,7 @@ bool checkForShaderErrors() {
 }
 
 const char* GL_type_to_string(GLenum type) {
+	/* #PORT
 	switch (type) {
 	case GL_BOOL: return "bool";
 	case GL_INT: return "int";
@@ -816,92 +826,14 @@ const char* GL_type_to_string(GLenum type) {
 	case GL_SAMPLER_2D_SHADOW: return "sampler2DShadow";
 	default: break;
 	}
+	*/
 	return "other";
 }
-void print_all(GLuint programme) {
-	log("--------------------\nshader programme %i info:\n", programme);
-	int params = -1;
-	glGetProgramiv(programme, GL_LINK_STATUS, &params);
-	log("GL_LINK_STATUS = %i\n", params);
 
-	glGetProgramiv(programme, GL_ATTACHED_SHADERS, &params);
-	log("GL_ATTACHED_SHADERS = %i\n", params);
-
-	glGetProgramiv(programme, GL_ACTIVE_ATTRIBUTES, &params);
-	log("GL_ACTIVE_ATTRIBUTES = %i\n", params);
-	for (int i = 0; i < params; i++) {
-		char name[64];
-		int max_length = 64;
-		int actual_length = 0;
-		int size = 0;
-		GLenum type;
-		glGetActiveAttrib(
-			programme,
-			i,
-			max_length,
-			&actual_length,
-			&size,
-			&type,
-			name
-			);
-		if (size > 1) {
-			for (int j = 0; j < size; j++) {
-				char long_name[64];
-#ifdef _WIN32
-				sprintf_s(long_name, "%s[%i]", name, j);
-#else
-				sprintf(long_name, "%s[%i]", name, j);
-#endif
-				int location = glGetAttribLocation(programme, long_name);
-				log("  %i) type:%s name:%s location:%i\n",
-					i, GL_type_to_string(type), long_name, location);
-			}
-		} else {
-			int location = glGetAttribLocation(programme, name);
-			log("  %i) type:%s name:%s location:%i\n",
-				i, GL_type_to_string(type), name, location);
-		}
-	}
-
-	glGetProgramiv(programme, GL_ACTIVE_UNIFORMS, &params);
-	log("GL_ACTIVE_UNIFORMS = %i\n", params);
-	for (int i = 0; i < params; i++) {
-		char name[64];
-		int max_length = 64;
-		int actual_length = 0;
-		int size = 0;
-		GLenum type;
-		glGetActiveUniform(
-			programme,
-			i,
-			max_length,
-			&actual_length,
-			&size,
-			&type,
-			name
-			);
-		if (size > 1) {
-			for (int j = 0; j < size; j++) {
-				char long_name[64];
-#ifdef _WIN32
-				sprintf_s(long_name, "%s[%i]", name, j);
-#else
-				sprintf(long_name, "%s[%i]", name, j);
-#endif
-				int location = glGetUniformLocation(programme, long_name);
-				log("  %i) type:%s name:%s location:%i\n",
-					i, GL_type_to_string(type), long_name, location);
-			}
-		} else {
-			int location = glGetUniformLocation(programme, name);
-			log("  %i) type:%s name:%s location:%i\n",
-				i, GL_type_to_string(type), name, location);
-		}
-	}
-}
 
 bool checkForGLErrors() {
 	bool first_error = true;
+	/* #PORT ?
 	while (true) {
 		GLenum err = glGetError();
 		if (err != GL_NO_ERROR) {
@@ -924,8 +856,10 @@ bool checkForGLErrors() {
 			break;
 		}
 	};
+	*/
 	return !first_error; // if there were no errors, the first error flag would still be set
 }
+#if 0 // #PORT ?
 void setUniformBool(int loc, bool val) {
 	glUniform1i(loc, val ? 1 : 0);
 	assert(!checkForGLErrors());
@@ -982,3 +916,4 @@ void unsetUniformTexture(int unit, int target) {
 	glBindTexture(target, 0);
 	//assert(!checkForGLErrors());
 }
+#endif

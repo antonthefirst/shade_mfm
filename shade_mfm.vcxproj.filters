@@ -10,29 +10,11 @@
     <ClCompile Include="libs\imgui\imgui_draw.cpp">
       <Filter>libs\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="libs\GL\gl3w.c">
-      <Filter>libs\gl</Filter>
-    </ClCompile>
-    <ClCompile Include="wrap\imgui_impl_glfw_gl3.cpp">
-      <Filter>wrap</Filter>
-    </ClCompile>
-    <ClCompile Include="wrap\app_wrap.cpp">
-      <Filter>wrap</Filter>
-    </ClCompile>
-    <ClCompile Include="wrap\input_wrap.cpp">
-      <Filter>wrap</Filter>
-    </ClCompile>
-    <ClCompile Include="wrap\imgui_wrap.cpp">
-      <Filter>wrap</Filter>
-    </ClCompile>
     <ClCompile Include="core\log.cpp">
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="core\maths.cpp">
       <Filter>core</Filter>
-    </ClCompile>
-    <ClCompile Include="wrap\recorder_wrap.cpp">
-      <Filter>wrap</Filter>
     </ClCompile>
     <ClCompile Include="core\pose.cpp">
       <Filter>core</Filter>
@@ -64,9 +46,6 @@
     <ClCompile Include="src\mfm_main.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="wrap\image_wrap.cpp">
-      <Filter>wrap</Filter>
-    </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -94,14 +73,41 @@
     <ClCompile Include="core\gl_message_log.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="libs\imgui\imgui_widgets.cpp">
+      <Filter>libs\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\app_wrap.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\evk.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\imgui_impl_glfw.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\imgui_impl_vulkan.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\input_wrap.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\recorder_wrap.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="wrap\stb_wrap.cpp">
+      <Filter>wrap</Filter>
+    </ClCompile>
+    <ClCompile Include="src\world.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\compute.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="libs\GLFW\glfw3.h">
-      <Filter>libs\glfw</Filter>
-    </ClInclude>
-    <ClInclude Include="libs\GLFW\glfw3native.h">
-      <Filter>libs\glfw</Filter>
-    </ClInclude>
     <ClInclude Include="libs\imgui\imconfig.h">
       <Filter>libs\imgui</Filter>
     </ClInclude>
@@ -120,24 +126,6 @@
     <ClInclude Include="libs\imgui\stb_truetype.h">
       <Filter>libs\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="libs\GL\gl3w.h">
-      <Filter>libs\gl</Filter>
-    </ClInclude>
-    <ClInclude Include="libs\GL\glcorearb.h">
-      <Filter>libs\gl</Filter>
-    </ClInclude>
-    <ClInclude Include="wrap\imgui_impl_glfw_gl3.h">
-      <Filter>wrap</Filter>
-    </ClInclude>
-    <ClInclude Include="wrap\app_wrap.h">
-      <Filter>wrap</Filter>
-    </ClInclude>
-    <ClInclude Include="wrap\input_wrap.h">
-      <Filter>wrap</Filter>
-    </ClInclude>
-    <ClInclude Include="wrap\imgui_wrap.h">
-      <Filter>wrap</Filter>
-    </ClInclude>
     <ClInclude Include="core\log.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -155,15 +143,6 @@
     </ClInclude>
     <ClInclude Include="libs\stb\stb_image_write.h">
       <Filter>libs\stb</Filter>
-    </ClInclude>
-    <ClInclude Include="libs\GLFW\glfw3_64.h">
-      <Filter>libs\glfw</Filter>
-    </ClInclude>
-    <ClInclude Include="libs\GLFW\glfw3native_64.h">
-      <Filter>libs\glfw</Filter>
-    </ClInclude>
-    <ClInclude Include="wrap\recorder_wrap.h">
-      <Filter>wrap</Filter>
     </ClInclude>
     <ClInclude Include="core\crc.h">
       <Filter>core</Filter>
@@ -201,9 +180,6 @@
     <ClInclude Include="core\vec4.h">
       <Filter>core</Filter>
     </ClInclude>
-    <ClInclude Include="wrap\image_wrap.h">
-      <Filter>wrap</Filter>
-    </ClInclude>
     <ClInclude Include="core\win_dirent.h">
       <Filter>core</Filter>
     </ClInclude>
@@ -225,6 +201,51 @@
     <ClInclude Include="core\gl_message_log.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="libs\imgui\imgui_user.h">
+      <Filter>libs\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="libs\imgui\imstb_rectpack.h">
+      <Filter>libs\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="libs\imgui\imstb_textedit.h">
+      <Filter>libs\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="libs\imgui\imstb_truetype.h">
+      <Filter>libs\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="libs\GLFW\glfw3.h">
+      <Filter>libs\glfw</Filter>
+    </ClInclude>
+    <ClInclude Include="libs\GLFW\glfw3native.h">
+      <Filter>libs\glfw</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\app_wrap.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\evk.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\imgui_impl_glfw.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\imgui_impl_vulkan.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\input_wrap.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="wrap\recorder_wrap.h">
+      <Filter>wrap</Filter>
+    </ClInclude>
+    <ClInclude Include="src\world.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\compute.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="libs">
@@ -235,9 +256,6 @@
     </Filter>
     <Filter Include="libs\imgui">
       <UniqueIdentifier>{977d56b8-c953-49a7-988b-823ae885bdc3}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="libs\gl">
-      <UniqueIdentifier>{abf7ce9d-8537-43b2-b14a-115e77ca6d74}</UniqueIdentifier>
     </Filter>
     <Filter Include="src">
       <UniqueIdentifier>{483c7e91-8873-43b6-9cff-b7ca54bddcca}</UniqueIdentifier>

@@ -2,19 +2,22 @@
 #include "core/container.h"
 #include "core/cpu_timer.h"
 #include "imgui/imgui.h"
-#include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
 #define SYS_GL "OpenGL"
 
 namespace {
 
+typedef uint32_t DbgEnum;
+typedef uint32_t DbgUint;
+typedef size_t   DbgSizei;
+
 struct Message {
-	GLenum source;
-	GLenum type;
-	GLuint id;
-	GLenum severity;
-	GLsizei length;
+	DbgEnum source;
+	DbgEnum type;
+	DbgUint id;
+	DbgEnum severity;
+	DbgSizei length;
 	char message[1024]; // GL_MAX_DEBUG_MESSAGE_LENGTH = 0x9143 = 37187...so this could use some improvement if we don't want to truncate...
 	int count;
 	int64_t first_timestamp;
@@ -23,8 +26,9 @@ struct Message {
 
 static Bunch<Message> messages;
 
-static const char* DebugTypeString(GLenum type) {
+static const char* DebugTypeString(DbgEnum type) {
 	switch(type) {
+		/* #PORT
 	case GL_DEBUG_TYPE_ERROR: return "Error";
 	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: return "Deprecated Behavior";
 	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: return "Undefined Behavior";
@@ -34,36 +38,42 @@ static const char* DebugTypeString(GLenum type) {
 	case GL_DEBUG_TYPE_PUSH_GROUP: return "Push Group";
 	case GL_DEBUG_TYPE_POP_GROUP: return "Pop Group";
 	case GL_DEBUG_TYPE_OTHER: return "Other";
+	*/
 	default: return "Unknown";
 	}
 }
-static const char* DebugSourceString(GLenum source) {
+static const char* DebugSourceString(DbgEnum source) {
 	switch(source) {
+		/* #PORT
 	case GL_DEBUG_SOURCE_API: return "API";
 	case GL_DEBUG_SOURCE_WINDOW_SYSTEM: return "Window System";
 	case GL_DEBUG_SOURCE_SHADER_COMPILER: return "Shader Compiler";
 	case GL_DEBUG_SOURCE_THIRD_PARTY: return "Third Party";
 	case GL_DEBUG_SOURCE_APPLICATION: return "Application";
 	case GL_DEBUG_SOURCE_OTHER: return "Other";
+	*/
 	default: return "Unknown";
 	}
 }
-static const char* DebugSeverityString(GLenum severity) {
+static const char* DebugSeverityString(DbgEnum severity) {
 	switch(severity) {
+		/* #PORT
 	case GL_DEBUG_SEVERITY_LOW: return "low";
 	case GL_DEBUG_SEVERITY_MEDIUM: return "medium";
 	case GL_DEBUG_SEVERITY_HIGH: return "high";
 	case GL_DEBUG_SEVERITY_NOTIFICATION: return "notification";
+	*/
 	default: return "unknown";
 	}
 }
 
-static void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam) {
+static void APIENTRY GLDebugCallback(DbgEnum source, DbgEnum type, DbgUint id, DbgEnum severity, DbgSizei length, const char* message, const void* userParam) {
 	(void)userParam;
 	int64_t timestamp = timeCounterSinceStart();
+	/* #PORT
 	if (type == GL_DEBUG_TYPE_ERROR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) // log all catastrophic problems to the console
 		logInfo(SYS_GL, "'%s' of severity '%s' from '%s: %s", DebugTypeString(type), DebugSeverityString(severity), DebugSourceString(source), message);
-
+	*/
 	bool found = false;
 	for (int i = 0; i < messages.count; ++i) {
 		if (source == messages[i].source && type == messages[i].type && id == messages[i].id && severity == messages[i].severity && length == messages[i].length && (strcmp(message, messages[i].message) == 0)) {
@@ -94,18 +104,18 @@ static void APIENTRY GLDebugCallback(GLenum source, GLenum type, GLuint id, GLen
 }
 
 void glMessageLogInit() {
-
+	/* #PORT
 	glDebugMessageCallback((GLDEBUGPROC)GLDebugCallback, nullptr);
 	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 	glEnable(GL_DEBUG_OUTPUT);
-
+	*/
 	//glClear(GL_DEPTH);   // make an error to test
 }
 void glMessageLogUI() {
 	bool any_errors = false;
 	for (int i = 0; i < messages.count; ++i) {
-		if (messages[i].type == GL_DEBUG_TYPE_ERROR || messages[i].type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) {
+		if (/* #PORT messages[i].type == GL_DEBUG_TYPE_ERROR || messages[i].type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR */ false) {
 			any_errors = true;
 			break;
 		}
@@ -119,9 +129,9 @@ void glMessageLogUI() {
 	static bool open = false;
 	if (gui::Begin("GL Debug Message Log", &open)) {
 		static int which = 0;
-		static GLenum severity_enums[] = { GL_DEBUG_SEVERITY_LOW, GL_DEBUG_SEVERITY_MEDIUM, GL_DEBUG_SEVERITY_HIGH, GL_DEBUG_SEVERITY_NOTIFICATION };
+		static DbgEnum severity_enums[] = { 0 /* GL_DEBUG_SEVERITY_LOW, GL_DEBUG_SEVERITY_MEDIUM, GL_DEBUG_SEVERITY_HIGH, GL_DEBUG_SEVERITY_NOTIFICATION */};
 		static vec4 severity_colors[] = { vec4(1.0f,1.0f,0.0f,1.0f), vec4(1.0f,0.5f,0.0f,1.0f), vec4(1.0f,0.0f,0.0f,1.0f), vec4(0.0f,1.0f,0.0f,1.0f) };
-		static GLenum which_enums[] = { 0, GL_DEBUG_TYPE_ERROR, GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR, GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR, GL_DEBUG_TYPE_PORTABILITY, GL_DEBUG_TYPE_PERFORMANCE, GL_DEBUG_TYPE_MARKER, GL_DEBUG_TYPE_PUSH_GROUP, GL_DEBUG_TYPE_POP_GROUP, GL_DEBUG_TYPE_OTHER };
+		static DbgEnum which_enums[] = { 0/* 0, GL_DEBUG_TYPE_ERROR, GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR, GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR, GL_DEBUG_TYPE_PORTABILITY, GL_DEBUG_TYPE_PERFORMANCE, GL_DEBUG_TYPE_MARKER, GL_DEBUG_TYPE_PUSH_GROUP, GL_DEBUG_TYPE_POP_GROUP, GL_DEBUG_TYPE_OTHER */};
 		int counts[ARRSIZE(which_enums)];
 		memset(counts, 0, sizeof(counts));
 		for (int i = 0; i < messages.count; ++i) {
@@ -134,7 +144,7 @@ void glMessageLogUI() {
 			}
 		}
 		for (int i = 0; i < ARRSIZE(which_enums); ++i) {
-			GLenum e = which_enums[i];
+			DbgEnum e = which_enums[i];
 			if (!((i%5)==0)) gui::SameLine();
 			if (counts[i] == 0) gui::PushStyleColor(ImGuiCol_Text, vec4(vec3(0.4f),1.0f));
 			gui::RadioButton(e == 0 ? "All" : DebugTypeString(e), &which, i);
