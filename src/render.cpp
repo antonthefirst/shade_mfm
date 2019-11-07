@@ -1,6 +1,10 @@
+#include "render.h"
 #include "wrap/evk.h"
+#include "core/log.h"
 #include "core/file_stat.h"
 #include <stdio.h>
+
+#include "shaders/draw_shared.inl"
 
 namespace {
 
@@ -8,7 +12,7 @@ typedef unsigned short DrawIdx;
 struct DrawVert {
     vec2  pos;
     vec2  uv;
-    u32   col;
+    //u32   col;
 };
 
 struct FrameRenderBuffers {
@@ -25,6 +29,17 @@ struct WindowRenderBuffers {
     FrameRenderBuffers*   Frames;
 };
 
+#if 1
+struct BasicQuad {
+	DrawVert verts[4] = {
+		{vec2(0.0f,0.0f), vec2(0.0f, 0.0f)}, //, 0xffffffff},
+		{vec2(1.0f,0.0f), vec2(1.0f, 0.0f)}, //, 0xffffffff},
+		{vec2(0.0f,1.0f), vec2(0.0f, 1.0f)}, //, 0xffffffff},
+		{vec2(1.0f,1.0f), vec2(1.0f, 1.0f)}, //, 0xffffffff},
+	};
+	DrawIdx  idxs[6] = { 0, 1, 2,  1, 3 , 2 };
+};
+#else
 struct BasicQuad {
 	DrawVert verts[4] = {
 		{vec2(0.0f,0.0f), vec2(0.0f, 0.0f), 0xffffffff},
@@ -34,6 +49,7 @@ struct BasicQuad {
 	};
 	DrawIdx  idxs[6] = { 0, 1, 2,  1, 3 , 2 };
 };
+#endif
 
 }
 
@@ -97,7 +113,7 @@ static void destroyWindowRenderBuffers(WindowRenderBuffers* buffers) {
     buffers->Count = 0;
 }
 
-static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers* rb, int fb_width, int fb_height)
+static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers* rb, ivec2 fb_size, ivec2 world_size, pose camera_from_world)
 {
     // Bind pipeline and descriptor sets:
     {
@@ -119,8 +135,8 @@ static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers*
         VkViewport viewport;
         viewport.x = 0;
         viewport.y = 0;
-        viewport.width = (float)fb_width;
-        viewport.height = (float)fb_height;
+        viewport.width = (float)fb_size.x;
+        viewport.height = (float)fb_size.y;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
@@ -129,14 +145,31 @@ static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers*
     // Setup scale and translation:
     // Our visible imgui space lies from draw_data->DisplayPps (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
     {
+		/*
         float scale[2];
         scale[0] = 2.0f / evk.win.Width;
         scale[1] = 2.0f / evk.win.Height;
         float translate[2];
         translate[0] = -1.0f - 0.0f * scale[0];
         translate[1] = -1.0f - 0.0f * scale[1];
-        vkCmdPushConstants(command_buffer, g_PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 0, sizeof(float) * 2, scale);
-        vkCmdPushConstants(command_buffer, g_PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 2, sizeof(float) * 2, translate);
+		*/
+		/*
+		float camera_aspect = float(screen_res.x) / float(screen_res.y);
+		float world_aspect = float(world_res.x) / float(world_res.y);
+		vec2 pos = camera_from_world.xy();
+		vec2 scale = vec2(world_aspect, 1.0f) * vec2(world_res.y) * scaleof(camera_from_world);
+		glUniform2f(20, pos.x, pos.y);
+		glUniform2f(21, scale.x, scale.y);
+		glUniform1f(22, 1.0f / camera_aspect);
+		glUniform1f(23, float(screen_res.y) / float(world_res.y) * scale.y); 
+		*/
+		float camera_aspect = float(fb_size.x) / float(fb_size.y);
+		float world_aspect = float(world_size.x) / float(world_size.y);
+		DrawUPC upc;
+		upc.camera_from_world_shift = camera_from_world.xy();
+		upc.camera_from_world_scale = vec2(world_aspect, 1.0f) * vec2(world_size.y) * scaleof(camera_from_world);
+		upc.inv_camera_aspect = 1.0f / camera_aspect;
+        vkCmdPushConstants(command_buffer, g_PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DrawUPC), &upc);
     }
 }
 
@@ -152,7 +185,7 @@ void renderRecreatePipelineIfNeeded() {
     {
         VkShaderModuleCreateInfo vert_info = {};
         vert_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		vert_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/basic.vert.spv", &vert_info.codeSize);
+		vert_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/draw.vert.spv", &vert_info.codeSize);
         err = vkCreateShaderModule(evk.dev, &vert_info, evk.alloc, &vert_module);
         evkCheckError(err);
 		free((void*)vert_info.pCode);
@@ -215,11 +248,9 @@ void renderRecreatePipelineIfNeeded() {
 
     //if (!g_PipelineLayout)
     {
-        // Constants: we are using 'vec2 offset' and 'vec2 scale' instead of a full 3d projection matrix
         VkPushConstantRange push_constants[1] = {};
         push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        push_constants[0].offset = sizeof(float) * 0;
-        push_constants[0].size = sizeof(float) * 4;
+        push_constants[0].size = sizeof(DrawUPC);
         VkDescriptorSetLayout set_layout[1] = { g_DescriptorSetLayout };
         VkPipelineLayoutCreateInfo layout_info = {};
         layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -245,7 +276,7 @@ void renderRecreatePipelineIfNeeded() {
     binding_desc[0].stride = sizeof(DrawVert);
     binding_desc[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attribute_desc[3] = {};
+    VkVertexInputAttributeDescription attribute_desc[2] = {};
     attribute_desc[0].location = 0;
     attribute_desc[0].binding = binding_desc[0].binding;
     attribute_desc[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -254,16 +285,18 @@ void renderRecreatePipelineIfNeeded() {
     attribute_desc[1].binding = binding_desc[0].binding;
     attribute_desc[1].format = VK_FORMAT_R32G32_SFLOAT;
     attribute_desc[1].offset = IM_OFFSETOF(DrawVert, uv);
+	/*
     attribute_desc[2].location = 2;
     attribute_desc[2].binding = binding_desc[0].binding;
     attribute_desc[2].format = VK_FORMAT_R8G8B8A8_UNORM;
     attribute_desc[2].offset = IM_OFFSETOF(DrawVert, col);
+	*/
 
     VkPipelineVertexInputStateCreateInfo vertex_info = {};
     vertex_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_info.vertexBindingDescriptionCount = 1;
+    vertex_info.vertexBindingDescriptionCount = ARRSIZE(binding_desc);
     vertex_info.pVertexBindingDescriptions = binding_desc;
-    vertex_info.vertexAttributeDescriptionCount = 3;
+    vertex_info.vertexAttributeDescriptionCount = ARRSIZE(attribute_desc);
     vertex_info.pVertexAttributeDescriptions = attribute_desc;
 
     VkPipelineInputAssemblyStateCreateInfo ia_info = {};
@@ -344,7 +377,7 @@ void renderDestroy() {
     if (g_PipelineLayout)       { vkDestroyPipelineLayout(evk.dev, g_PipelineLayout, evk.alloc); g_PipelineLayout = VK_NULL_HANDLE; }
     if (g_Pipeline)             { vkDestroyPipeline(evk.dev, g_Pipeline, evk.alloc); g_Pipeline = VK_NULL_HANDLE; }
 }
-void renderDraw(VkCommandBuffer command_buffer) {
+void renderDraw(VkCommandBuffer command_buffer, ivec2 world_size, pose camera_from_world) {
     // Allocate array to store enough vertex/index buffers
     WindowRenderBuffers* wrb = &g_MainWindowRenderBuffers;
     if (wrb->Frames == NULL)
@@ -392,7 +425,7 @@ void renderDraw(VkCommandBuffer command_buffer) {
     }
 
     // Setup desired Vulkan state
-    setupRenderState(command_buffer, rb, evk.win.Width, evk.win.Height);
+    setupRenderState(command_buffer, rb, ivec2(evk.win.Width, evk.win.Height), world_size, camera_from_world);
 
     VkRect2D scissor;
     scissor.offset.x = 0;

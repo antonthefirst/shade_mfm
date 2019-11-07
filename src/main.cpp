@@ -5,6 +5,7 @@
 #include <imgui/imgui.h>
 #include "core/log.h"
 #include "core/cpu_timer.h"
+#include "core/shader_loader.h"
 #include "timers.h"
 #include "core/vec2.h"
 #include <GLFW/glfw3.h>
@@ -171,6 +172,7 @@ int main(int, char**)
 		//ImGui::ShowDemoWindow();
 		mfmUpdate(&in);
 		timerUI(in);
+		guiShader();
 
 		ImGui::Render();
 

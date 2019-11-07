@@ -301,9 +301,6 @@
     <None Include="shaders\draw.frag">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\unit_quad.vert">
-      <Filter>shaders</Filter>
-    </None>
     <None Include="shaders\cpu_gpu_shared.inl">
       <Filter>shaders</Filter>
     </None>
@@ -408,6 +405,12 @@
     </None>
     <None Include="projects\anton_testing\spiral.splat">
       <Filter>projects\anton_testing</Filter>
+    </None>
+    <None Include="shaders\draw.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\draw_shared.inl">
+      <Filter>shaders</Filter>
     </None>
   </ItemGroup>
 </Project>

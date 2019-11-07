@@ -375,9 +375,11 @@ static void checkAllFilesForUpdates() {
 				continue;
 			}
 			
-#if 0 //#PORT
+
 			s64 t_start = time_counter();
+			/* #PORT
 			if (s.handle == 0) s.handle = glCreateShader(s.type);
+			*/
 
 			static std::vector<const char*> texts;
 			static std::vector<int> lens;
@@ -414,11 +416,12 @@ static void checkAllFilesForUpdates() {
 			s.final_text.len = w - s.final_text.str;
 
 			// submit the final shader source to compile
-			//glShaderSource(s.handle, texts.size(), &texts[0], &lens[0]);
+			/* #PORT
 			GLint final_len = (int)s.final_text.len;
 			glShaderSource(s.handle, 1, &s.final_text.str, (const GLint*)&final_len);
 
 			glCompileShader(s.handle);
+			*/
 			
 			FILE* file = fopen(TempStr("debug_shaders/%s", file_entries[s.file_idx].file.str), "wb");
 			if (file) {
@@ -446,6 +449,7 @@ static void checkAllFilesForUpdates() {
 				src[total_len] = 0;
 			}
 			
+			/* #PORT
 			int params = -1;
 			glGetShaderiv(s.handle, GL_COMPILE_STATUS, &params);
 			if (params != GL_TRUE) {
@@ -460,8 +464,9 @@ static void checkAllFilesForUpdates() {
 				guiSetErroredFile(s.file_idx);
 				any_errors_since_last_check = true;
 			} 
+			*/
 			s.time_to_compile = time_counter() - t_start; // do this after Get COMPILE_STATUS because that seems to actually block waiting for compiler to finish
-#endif
+
 		}
 	}
 	for (int i = 0; i < (int)prog_entries.size(); ++i) {

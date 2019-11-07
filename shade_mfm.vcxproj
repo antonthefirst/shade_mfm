@@ -290,6 +290,7 @@
     <None Include="shaders\cpu_gpu_shared.inl" />
     <None Include="shaders\defines.inl" />
     <None Include="shaders\draw.frag" />
+    <None Include="shaders\draw_shared.inl" />
     <None Include="shaders\globals.inl" />
     <None Include="shaders\hash.inl" />
     <None Include="shaders\prng.inl" />
@@ -297,7 +298,7 @@
     <None Include="shaders\splitmix32.inl" />
     <None Include="shaders\staged_update_direct.comp" />
     <None Include="shaders\uniforms.inl" />
-    <None Include="shaders\unit_quad.vert" />
+    <None Include="shaders\draw.vert" />
     <None Include="shaders\xoroshiro128starstar.inl" />
     <None Include="stdlib\DReg.splat" />
     <None Include="stdlib\ForkBomb.splat" />

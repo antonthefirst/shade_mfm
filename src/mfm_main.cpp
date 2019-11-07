@@ -140,6 +140,7 @@ static void texParamsClampToZeroAndNearest() {
 static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 	ivec2 req_vote_res = req_world_res + ivec2(EVENT_WINDOW_RADIUS * 2 * 2); // edges need to see R*2 off the edge, on each border
 
+
 	/* #PORT
 	
 	if (site_bits_img == 0) glGenTextures(1, &site_bits_img);
@@ -184,8 +185,9 @@ static bool resizeWorldIfNeeded(ivec2 req_world_res) {
 		vote_res = req_vote_res;
 		return true;
 	}
-	*/
+	
 	return false;
+	*/
 }
 static void initStatsIfNeeded() {
 	/* #PORT
@@ -653,6 +655,9 @@ static bool hack_reset = false;
 static bool hack_update = false;
 
 void mfmUpdate(Input* main_in) {
+	computeRecreatePipelineIfNeeded();
+	renderRecreatePipelineIfNeeded();
+
 	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
 	
 	bool do_reset = false;
@@ -789,7 +794,9 @@ void mfmUpdate(Input* main_in) {
 	drawViewport(0, 0, evk.win.Width, evk.win.Height);
 	drawClear(21/255.f, 33/255.f, 54/255.f);
 
-	bool world_hash_changed = resizeWorldIfNeeded(gui_world_res);
+	ivec2 prev_world_size = world.size;
+	world.resize(gui_world_res, computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
+	bool world_has_changed = world.size != prev_world_size;
 	initStatsIfNeeded();
 	bool file_change = false;
 	bool project_change = false;
@@ -799,7 +806,7 @@ void mfmUpdate(Input* main_in) {
 	if (!dont_reset_when_code_changes)
 		do_reset |= file_change;
 
-	if (world_hash_changed) { 
+	if (world_has_changed) { 
 		camera_from_world = camera_from_world_start = camera_from_world_target = calcOverviewPose(gui_world_res);
 		scale_before_zoomout = scaleof(camera_from_world);
 		overview_state = OVERVIEW_INACTIVE;
@@ -841,6 +848,7 @@ void mfmUpdate(Input* main_in) {
 		ctimer_stop();
 	}
 	*/
+	useProgram("shaders/staged_update_direct.comp", &prog_stats);
 	if (site_info.event_ocurred_signal != 0) {
 		log("Break!\n");
 		run = false;
@@ -916,12 +924,6 @@ void mfmUpdate(Input* main_in) {
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
 
-	computeRecreatePipelineIfNeeded();
-	renderRecreatePipelineIfNeeded();
-
-	if (world.size.x == 0) 
-		world.resize(ivec2(32), computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
-
 	if (gui::Begin("HACKS")) {
 		if (gui::Button("reset")) {
 			hack_reset = true;
@@ -943,5 +945,5 @@ void mfmCompute(VkCommandBuffer cb) {
 	computeStage(cb, STAGE_RENDER, world.size);
 }
 void mfmRender(VkCommandBuffer cb) {
-	renderDraw(cb);
+	renderDraw(cb, world.size, camera_from_world);
 }
