@@ -649,8 +649,8 @@ void mfmTerm() {
 	renderDestroy();
 }
 
-static bool hack_reset = true;
-static bool hack_update = true;
+static bool hack_reset = false;
+static bool hack_update = false;
 
 void mfmUpdate(Input* main_in) {
 	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
@@ -920,7 +920,7 @@ void mfmUpdate(Input* main_in) {
 	renderRecreatePipelineIfNeeded();
 
 	if (world.size.x == 0) 
-		world.resize(ivec2(128), computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
+		world.resize(ivec2(32), computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
 
 	if (gui::Begin("HACKS")) {
 		if (gui::Button("reset")) {
@@ -933,14 +933,14 @@ void mfmUpdate(Input* main_in) {
 void mfmCompute(VkCommandBuffer cb) {
 	computeBegin(cb);
 	if (hack_reset) {
-		computeStage(cb, STAGE_RESET, world.size);
+		computeStage(cb, STAGE_RESET, world.voteMapSize());
 		hack_reset = false;
 	}
 	if (hack_update) {
 		computeStage(cb, STAGE_VOTE, world.voteMapSize());
 		computeStage(cb, STAGE_EVENT, world.size);
-		computeStage(cb, STAGE_RENDER, world.size);
 	}
+	computeStage(cb, STAGE_RENDER, world.size);
 }
 void mfmRender(VkCommandBuffer cb) {
 	renderDraw(cb);

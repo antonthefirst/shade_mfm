@@ -4,6 +4,9 @@
 #include "shaders/cpu_gpu_shared.inl"
 #include "shaders/defines.inl" // for MFM world size
 
+static ivec2 paddedSize(ivec2 world_size) {
+	return world_size + ivec2(EVENT_WINDOW_RADIUS * 2 * 2);
+}
 void World::destroy() {
 	if (render_view) { vkDestroyImageView(evk.dev, render_view, evk.alloc); render_view = VK_NULL_HANDLE; }
 	 prng_state.destroy();
@@ -30,12 +33,13 @@ bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDesc
 	evkResetCommandPool(command_pool);
 	evkBeginCommandBuffer(command_buffer);
 
-	if ( !prng_state.resize(new_size, command_buffer)) { destroy(); return false; }
 	if (  !site_bits.resize(new_size, command_buffer)) { destroy(); return false; }
-	if (       !vote.resize(new_size, command_buffer)) { destroy(); return false; }
 	if (      !color.resize(new_size, command_buffer)) { destroy(); return false; }
 	if (!event_count.resize(new_size, command_buffer)) { destroy(); return false; }
 	if (        !dev.resize(new_size, command_buffer)) { destroy(); return false; }
+
+	if ( !prng_state.resize(paddedSize(new_size), command_buffer)) { destroy(); return false; }
+	if (       !vote.resize(paddedSize(new_size), command_buffer)) { destroy(); return false; }
 
 	evkEndCommandBufferAndSubmit(command_buffer);
 
@@ -94,5 +98,5 @@ bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDesc
 	return true;
 }
 ivec2 World::voteMapSize() const {
-	return size + ivec2(EVENT_WINDOW_RADIUS * 2 * 2);
+	return paddedSize(size);
 }
