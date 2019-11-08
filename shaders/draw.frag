@@ -1,22 +1,13 @@
 //include "defines.inl"
-//include "globals.inl"
+//include "draw_shared.inl"
 //include "hash.inl"
 //include "maths.inl"
-//include "cpu_gpu_shared.inl"
-//include "bit_packing.inl"
 
-layout(location = 2) uniform usampler2D site_bits_img;
-layout(location = 3) uniform usampler2D dev_img;
-layout(location = 4) uniform  sampler2D color_img;
-layout(location = 5) uniform usampler2D vote_img;
+layout(binding = 0) uniform  sampler2D color_img;
+layout(binding = 1) uniform usampler2D dev_img;
 
-layout(location = 21) uniform vec2 camera_from_world_scale;
-layout(location = 23) uniform float screen_from_grid_scale;
-
-layout(location = 30) uniform float event_window_vis;
-
-in vec2 st;
-out vec4 out_col;
+layout(location = 0) in vec2 st;
+layout(location = 0) out vec4 out_col;
 
 float dBox(vec2 p, vec2 s) {
 	vec2 d = abs(p) - s;
@@ -66,6 +57,7 @@ void main() {
 	if (amt_sum > 1.0)
 		col_sum /= amt_sum;
 
+	col_sum.xyz = srgb_from_lrgb(col_sum.xyz);
 	col = col_sum;
 
 	if (event_window_vis > 0.0) {
@@ -94,6 +86,5 @@ void main() {
 			}
 		}
 	}
-
 	out_col = vec4(col.xyz, 1.0);
 }

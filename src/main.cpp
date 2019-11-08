@@ -176,6 +176,7 @@ int main(int, char**)
 
 		ImGui::Render();
 
+		//21/255.f, 33/255.f, 54/255.f
 		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 		memcpy(&evk.win.ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
 

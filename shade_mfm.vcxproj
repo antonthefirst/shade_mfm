@@ -293,6 +293,7 @@
     <None Include="shaders\draw_shared.inl" />
     <None Include="shaders\globals.inl" />
     <None Include="shaders\hash.inl" />
+    <None Include="shaders\maths.inl" />
     <None Include="shaders\prng.inl" />
     <None Include="shaders\sites.inl" />
     <None Include="shaders\splitmix32.inl" />

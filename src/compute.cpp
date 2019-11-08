@@ -1,3 +1,4 @@
+#include "compute.h"
 #include "wrap/evk.h"
 #include "core/log.h"
 #include "core/file_stat.h"
@@ -37,7 +38,7 @@ void computeRecreatePipelineIfNeeded() {
 			evkMakeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, 5),
 		};
 		VkDescriptorSetLayoutCreateInfo descriptorLayout = evkMakeDescriptorSetLayoutCreateInfo(setLayoutBindings, ARRSIZE(setLayoutBindings));
-		err = vkCreateDescriptorSetLayout(evk.dev, &descriptorLayout, nullptr, &g_ComputeDescriptorSetLayout);
+		err = vkCreateDescriptorSetLayout(evk.dev, &descriptorLayout, evk.alloc, &g_ComputeDescriptorSetLayout);
 		evkCheckError(err);
 	}
 
@@ -49,7 +50,7 @@ void computeRecreatePipelineIfNeeded() {
         push_constants[0].size = sizeof(ComputeUPC);
 		pPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 		pPipelineLayoutCreateInfo.pPushConstantRanges = push_constants;
-		err = vkCreatePipelineLayout(evk.dev, &pPipelineLayoutCreateInfo, nullptr, &g_ComputePipelineLayout);
+		err = vkCreatePipelineLayout(evk.dev, &pPipelineLayoutCreateInfo, evk.alloc, &g_ComputePipelineLayout);
 		evkCheckError(err);
 	}
 
@@ -86,7 +87,9 @@ void computeDestroy() {
     if (g_ComputePipeline)             { vkDestroyPipeline(evk.dev, g_ComputePipeline, evk.alloc); g_ComputePipeline = VK_NULL_HANDLE; }
 }
 
-void computeBegin(VkCommandBuffer command_buffer) {
+void computeBegin(VkCommandBuffer command_buffer, ComputeArgs args) {
+	upc.site_info_idx = args.site_info_idx;
+
 	// Bind pipeline
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, g_ComputePipeline);
 	
@@ -101,32 +104,3 @@ void computeStage(VkCommandBuffer command_buffer, int stage, ivec2 size) {
 	vkCmdDispatch(command_buffer, dispatch.x, dispatch.y, 1);
 	evkMemoryBarrier(command_buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }
-/*
-void computeUpdate(VkCommandBuffer cb) {
-
-	if (do_reset) {
-		do_reset = false;
-		upc.stage = 0;
-		vkCmdPushConstants(command_buffer, g_ComputePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputeUPC) , &upc);
-		vkCmdDispatch(command_buffer, total_map.size.x / 16, total_map.size.y / 16, 1);
-		evkMemoryBarrier(command_buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-	}
-	
-	if (do_update) {
-		for (int i = 0; i < 1; ++i) {
-			upc.stage = 1;
-			vkCmdPushConstants(command_buffer, g_ComputePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputeUPC) , &upc);
-			vkCmdDispatch(command_buffer, total_map.size.x / 16, total_map.size.y / 16, 1);
-			evkMemoryBarrier(command_buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-		}
-	}
-	
-	if (do_render) {
-		upc.stage = 2;
-		vkCmdPushConstants(command_buffer, g_ComputePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputeUPC) , &upc);
-		vkCmdDispatch(command_buffer, total_map.size.x / 16, total_map.size.y / 16, 1);
-		evkMemoryBarrier(command_buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-	}
-	
-}
-*/

@@ -25,9 +25,19 @@
 
 #define NO_SITE ivec2(-1);
 
+namespace {
+
+struct SimControl {
+	bool do_reset = false;
+	int dispatches_per_batch = 0;
+	int dispatch_counter = 0;
+	int stop_at_n_dispatches = 0;
+} ctrl;
+
+}
+
 // mfm state
 static GLuint ctrl_state_handle = 0;
-static u32 dispatch_counter = 0;
 static bool reset_ok = false;
 static ProgramInfo prog_info;
 static World world;
@@ -65,8 +75,6 @@ static s64 time_of_reset = 0;
 static s64 events_since_reset = 0;
 static double sim_time_since_reset = 0.0;
 static double wall_time_since_reset = 0.0;
-static int gui_stop_at_n_dispatches = 800;
-static bool stop_update_on_n_dispatches = false;
 static float scale_before_zoomout = 1.0f;
 static bool is_overview = false;
 static float mouse_wheel_smooth = 0.0f;
@@ -82,113 +90,6 @@ static bool gui_break_on_event = false;
 static float event_window_vis = 0.0f;
 
 
-static void drawViewport(int llx, int lly, int width, int height) {
-	/* #PORT
-	glViewport(llx, lly, width, height);
-	*/
-}
-static void drawClear(float r, float g, float b) {
-	/* #PORT
-	glClearColor(r, g, b, 1.f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	*/ 
-}
-
-static u32 renderGetUnitQuadVao() {
-	/* #PORT
-	if (unit_quad_vao != 0) return unit_quad_vao;
-	// create render geometry
-	glGenVertexArrays(1, &unit_quad_vao);
-	glGenBuffers(1, &unit_quad_vbo);
-	glGenBuffers(1, &unit_quad_ebo);
-
-	// Bind the Vertex Array Object first, then bind and set vertex buffer(s) and attribute pointer(s).
-	glBindVertexArray(unit_quad_vao);
-
-	// cover the screen, but match pixels to aspect ratio
-	static const float verts[] = { 0,0, 0,0,   1,0, 1,0,   0,1, 0,1,  1,1, 1,1, };
-
-	glBindBuffer(GL_ARRAY_BUFFER, unit_quad_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-
-	static const unsigned int elems[] = { 0,1,2, 1,3,2 };
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, unit_quad_ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elems), (void*)elems, GL_STATIC_DRAW);
-
-	int stride = 4 * sizeof(float);
-	// position
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, (void*)0);
-	glEnableVertexAttribArray(0);
-
-	// uv
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void*)(0 + 2 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-	return unit_quad_vao;
-	*/
-}
-static void texParamsClampToZeroAndNearest() {
-	/* #PORT
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); // 0 by default
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	*/
-}
-static bool resizeWorldIfNeeded(ivec2 req_world_res) {
-	ivec2 req_vote_res = req_world_res + ivec2(EVENT_WINDOW_RADIUS * 2 * 2); // edges need to see R*2 off the edge, on each border
-
-
-	/* #PORT
-	
-	if (site_bits_img == 0) glGenTextures(1, &site_bits_img);
-	if (color_img == 0) glGenTextures(1, &color_img);
-	if (dev_img == 0) glGenTextures(1, &dev_img);
-	if (vote_img == 0) glGenTextures(1, &vote_img);
-	if (event_count_img == 0) glGenTextures(1, &event_count_img);
-	if (prng_state_img == 0) glGenTextures(1, &prng_state_img);
-
-	if (world_res != req_world_res) {
-		glBindTexture(GL_TEXTURE_2D, site_bits_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, SITE_FORMAT, req_world_res.x, req_world_res.y, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glBindTexture(GL_TEXTURE_2D, color_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, COLOR_FORMAT, req_world_res.x, req_world_res.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glBindTexture(GL_TEXTURE_2D, dev_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, DEV_FORMAT, req_world_res.x, req_world_res.y, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glBindTexture(GL_TEXTURE_2D, vote_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, VOTE_FORMAT, req_vote_res.x, req_vote_res.y, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glBindTexture(GL_TEXTURE_2D, event_count_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, EVENT_COUNT_FORMAT, req_world_res.x, req_world_res.y, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glBindTexture(GL_TEXTURE_2D, prng_state_img);
-		texParamsClampToZeroAndNearest();
-		glTexImage2D(GL_TEXTURE_2D, 0, PRNG_STATE_FORMAT, req_vote_res.x, req_vote_res.y, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, NULL);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		world_res = req_world_res;
-		vote_res = req_vote_res;
-		return true;
-	}
-	
-	return false;
-	*/
-}
 static void initStatsIfNeeded() {
 	/* #PORT
 	// it sounds like these should really be glBufferStorage, but that requires 4.4
@@ -272,17 +173,7 @@ static void mfmSetUniforms(int stage = 0) {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ctrl_state_handle);
 	*/
 }
-static void mfmGPUReset(ivec2 world_res) {
-	/* #PORT
-	mfmSetUniforms(STAGE_RESET);
-	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
-	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
-	glMemoryBarrier(GL_ALL_BARRIER_BITS);//GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	*/
-	time_of_reset = time_counter();
-}
+
 static void mfmComputeStats(ivec2 world_res) {
 	/* #PORT
 	mfmSetUniforms(STAGE_COMPUTE_STATS);
@@ -333,108 +224,6 @@ static void mfmReadStats() {
 	stats_write_idx = stats_read_idx;
 	gtimer_stop();
 	*/
-}
-static void mfmGPUUpdate(ivec2 world_res, int dispatches_per_batch, int stop_at_n_dispatches) {
-	if (dispatches_per_batch == 0) return;
-	update_timer.reset();
-	update_timer.start("batch");
-	gtimer_start("update");
-
-	for (int i = 0; i < dispatches_per_batch; ++i) { 
-		if (stop_at_n_dispatches != 0 && dispatch_counter == stop_at_n_dispatches) break;
-
-		/* #PORT
-		mfmSetUniforms(STAGE_VOTE);
-		gtimer_start("vote");
-		glDispatchCompute((vote_res.x / GROUP_SIZE_X) + 1, (vote_res.y / GROUP_SIZE_Y) + 1, 1);
-		//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
-		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
-		gtimer_stop();
-		
-		mfmSetUniforms(STAGE_EVENT);
-		gtimer_start("tick");
-		glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
-		//glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // opt
-		//glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // opt, get ready to render
-		glMemoryBarrier(GL_ALL_BARRIER_BITS); // safe
-		gtimer_stop();
-		*/
-
-		dispatch_counter++;
-	}
-
-	update_timer.stop();
-	gtimer_stop();
-
-}
-
-static void mfmGPURender(ivec2 world_res) {
-	/* #PORT
-	gtimer_start("render");
-	mfmSetUniforms(STAGE_RENDER);
-	glDispatchCompute((world_res.x/GROUP_SIZE_X)+1, (world_res.y/GROUP_SIZE_Y)+1,1);
-	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-	glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
-	gtimer_stop();
-	*/
-}
-bool mfmDraw(ivec2 screen_res, ivec2 world_res, pose camera_from_world) {
-	/* #PORT
-	gtimer_start("draw");
-	float s = float(screen_res.y) / float(world_res.y);
-	ivec2 dims = s > 1.0f ? world_res * ivec2(s) : world_res / ivec2(1 + 1.0f/s);
-	ivec2 pos = screen_res/ivec2(2) - dims/ivec2(2);
-	//glViewport(pos.x,pos.y,dims.x,dims.y);
-	glViewport(0,0, screen_res.x, screen_res.y);
-	if (useProgram("shaders/unit_quad.vert", "shaders/draw.frag")) {
-		glEnable(GL_FRAMEBUFFER_SRGB);
-		glActiveTexture(GL_TEXTURE0 + 0);
-		glBindTexture(GL_TEXTURE_2D, site_bits_img);
-		glUniform1i(2, 0);
-
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, dev_img);
-		glUniform1i(3, 1);
-
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, color_img);
-		glUniform1i(4, 2);
-
-		glActiveTexture(GL_TEXTURE0 + 3);
-		glBindTexture(GL_TEXTURE_2D, vote_img);
-		glUniform1i(5, 3);
-
-		
-		float camera_aspect = float(screen_res.x) / float(screen_res.y);
-		float world_aspect = float(world_res.x) / float(world_res.y);
-		vec2 pos = camera_from_world.xy();
-		vec2 scale = vec2(world_aspect, 1.0f) * vec2(world_res.y) * scaleof(camera_from_world);
-		glUniform2f(20, pos.x, pos.y);
-		glUniform2f(21, scale.x, scale.y);
-		glUniform1f(22, 1.0f / camera_aspect);
-		glUniform1f(23, float(screen_res.y) / float(world_res.y) * scale.y); 
-
-		glUniform1f(30, event_window_vis);
-
-		glBindVertexArray(renderGetUnitQuadVao());
-
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-		glBindVertexArray(0);
-
-		glActiveTexture(GL_TEXTURE0 + 3);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0 + 2);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0 + 0);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
-		glDisable(GL_FRAMEBUFFER_SRGB);
-	}
-	gtimer_stop();
-	*/
-	return !checkForShaderErrors();
 }
 
 static void dirscanCallback(const char* pathfile, const char* name, const char* ext) {
@@ -651,16 +440,13 @@ void mfmTerm() {
 	renderDestroy();
 }
 
-static bool hack_reset = false;
-static bool hack_update = false;
-
 void mfmUpdate(Input* main_in) {
 	computeRecreatePipelineIfNeeded();
 	renderRecreatePipelineIfNeeded();
 
 	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
 	
-	bool do_reset = false;
+	ctrl.do_reset = false;
 	bool do_step = false;
 
 	bool mouse_is_onscreen = main_in->mouse.x >= 0 && main_in->mouse.x <= 1.0f && main_in->mouse.y >= 0 && main_in->mouse.y <= 1.0f; 
@@ -742,7 +528,7 @@ void mfmUpdate(Input* main_in) {
 		wall_time_since_reset += sec_per_frame;
 	}
 
-	int dispatch_count = 0;
+	ctrl.dispatches_per_batch = 0;
 
 	// compute AEPS and AER
 	int total_sites = gui_world_res.x * gui_world_res.y;
@@ -755,7 +541,7 @@ void mfmUpdate(Input* main_in) {
 	AER_avg /= ARRSIZE(AER_history);
 	
 	if (gui::Begin("Control")) {
-		guiControl(&do_reset, &run, &do_step, &gui_world_res, dispatch_counter, AEPS, AER_avg);
+		guiControl(&ctrl.do_reset, &run, &do_step, &gui_world_res, ctrl.dispatch_counter, AEPS, AER_avg);
 	} gui::End();
 
 	if (gui::Begin("Visualize")) {
@@ -763,23 +549,23 @@ void mfmUpdate(Input* main_in) {
 	} gui::End();
 
 	if (run) {
-		dispatch_count = gui_set.run_speed;
+		ctrl.dispatches_per_batch = gui_set.run_speed;
 	} else if (do_step) {
-		dispatch_count = 1;
+		ctrl.dispatches_per_batch = 1;
 	}
 
-	if (do_reset)
+	if (ctrl.do_reset)
 		memset(AER_history, 0, sizeof(AER_history));
 	if (run)
 		AER_history[(AER_history_idx++)%ARRSIZE(AER_history)] = AER;
 
-	int stop_at_n_dispatches = gui_set.enable_break_at_step ? gui_set.break_at_step_number : 0;
+	ctrl.stop_at_n_dispatches = gui_set.enable_break_at_step ? gui_set.break_at_step_number : 0;
 
 	if (gui::Begin("Performance")) {
-		float sec_per_dispatch = dispatch_count == 0 ? 0.0f : sec_per_batch / dispatch_count;
+		float sec_per_dispatch = ctrl.dispatches_per_batch == 0 ? 0.0f : sec_per_batch / ctrl.dispatches_per_batch;
 		float events_per_sim_sec = stats.event_count_this_batch / sec_per_batch;
 		float events_per_wall_sec = sec_per_frame == 0.0f ? 0.0f : stats.event_count_this_batch / sec_per_frame;
-		float event_count_this_dispatch = stats.event_count_this_batch / (dispatch_count == 0 ? 1 : dispatch_count);
+		float event_count_this_dispatch = stats.event_count_this_batch / (ctrl.dispatches_per_batch == 0 ? 1 : ctrl.dispatches_per_batch);
 		float AER = events_per_sim_sec / total_sites;
 		float WAER = events_per_wall_sec / total_sites;
 		gui::Text("Events per second:  %3.3fM",    events_per_sim_sec / (1000000.0f)); 
@@ -791,9 +577,6 @@ void mfmUpdate(Input* main_in) {
 		gui::Text("Time:               %3.1f sec", sim_time_since_reset);
 	} gui::End(); 
 
-	drawViewport(0, 0, evk.win.Width, evk.win.Height);
-	drawClear(21/255.f, 33/255.f, 54/255.f);
-
 	ivec2 prev_world_size = world.size;
 	world.resize(gui_world_res, computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
 	bool world_has_changed = world.size != prev_world_size;
@@ -802,53 +585,21 @@ void mfmUpdate(Input* main_in) {
 	bool project_change = false;
 	
 	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
-	do_reset |= project_change;
+	ctrl.do_reset |= project_change;
 	if (!dont_reset_when_code_changes)
-		do_reset |= file_change;
+		ctrl.do_reset |= file_change;
 
 	if (world_has_changed) { 
 		camera_from_world = camera_from_world_start = camera_from_world_target = calcOverviewPose(gui_world_res);
 		scale_before_zoomout = scaleof(camera_from_world);
 		overview_state = OVERVIEW_INACTIVE;
-		do_reset = true;
+		ctrl.do_reset = true;
 	}
 
-	bool draw_ok = false;
+	/* GL UPDATE WAS HERE */
 
-	// update loop
-	/* #PORT
-	if (useProgram("shaders/staged_update_direct.comp", &prog_stats)) {
-		ctimer_start("update"); 
-
-		if (do_reset) {
-			dispatch_counter = 0;
-			events_since_reset = 0;
-			sim_time_since_reset = 0.0;
-			wall_time_since_reset = 0.0;
-		}
-#if 1
-		if (do_reset)
-			mfmGPUReset(gui_world_res);
-
-		//if (want_stats) // need to clear for AER
-			mfmClearStats();
-
-		mfmGPUUpdate(gui_world_res, dispatch_count, stop_at_n_dispatches);
-	
-		if (want_stats)
-			mfmComputeStats(gui_world_res);
-
-		mfmSiteInfo(gui_world_res);
-
-		mfmGPURender(gui_world_res);
-
-		//if (want_stats) // need to read for AER
-			mfmReadStats();
-#endif
-		ctimer_stop();
-	}
-	*/
 	useProgram("shaders/staged_update_direct.comp", &prog_stats);
+	useProgram("shaders/draw.vert", "shaders/draw.frag");
 	if (site_info.event_ocurred_signal != 0) {
 		log("Break!\n");
 		run = false;
@@ -857,14 +608,7 @@ void mfmUpdate(Input* main_in) {
 
 	open_shader_gui |= checkForShaderErrors();
 
-	// draw loop
-	{
-		ctimer_start("draw");
-		mfmDraw(screen_res, gui_world_res, camera_from_world);
-		ctimer_stop();
-	}
-
-	open_shader_gui |= checkForShaderErrors();
+	/* GL DRAW WAS HERE */
 
 	showSplatCompilerErrors(&prog_info, StringRange(prog_stats.comp_log, prog_stats.comp_log ? strlen(prog_stats.comp_log) : 0), prog_stats.time_to_compile + prog_stats.time_to_link);
 
@@ -900,7 +644,6 @@ void mfmUpdate(Input* main_in) {
 				gui::ColorBar("##bar", einfo.color, percent);
 				hover |= gui::IsItemHovered();
 				if (hover)
-					gui::SetTooltip("%.*s", einfo.name.len, einfo.name.str);
 				gui::PopID();
 			}
 		}
@@ -923,27 +666,62 @@ void mfmUpdate(Input* main_in) {
 
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
-
-	if (gui::Begin("HACKS")) {
-		if (gui::Button("reset")) {
-			hack_reset = true;
-		}
-		gui::Checkbox("update", &hack_update);
-	} gui::End();
 }
 
 void mfmCompute(VkCommandBuffer cb) {
-	computeBegin(cb);
-	if (hack_reset) {
+	ctimer_start("update"); 
+	ComputeArgs args;
+	args.site_info_idx = site_info_idx;
+	computeBegin(cb, args);
+
+	if (ctrl.do_reset) {
+		ctrl.dispatch_counter = 0;
+		events_since_reset = 0;
+		sim_time_since_reset = 0.0;
+		wall_time_since_reset = 0.0;
 		computeStage(cb, STAGE_RESET, world.voteMapSize());
-		hack_reset = false;
+		time_of_reset = time_counter();
+		ctrl.do_reset = false;
 	}
-	if (hack_update) {
-		computeStage(cb, STAGE_VOTE, world.voteMapSize());
-		computeStage(cb, STAGE_EVENT, world.size);
+
+	mfmClearStats();
+
+	if (ctrl.dispatches_per_batch > 0) {;
+		//update_timer.reset();
+		//update_timer.start("batch");
+		//gtimer_start("update");
+
+		for (int i = 0; i < ctrl.dispatches_per_batch; ++i) { 
+			if (ctrl.stop_at_n_dispatches != 0 && ctrl.dispatch_counter == ctrl.stop_at_n_dispatches) break;
+
+			gtimer_start("vote");
+			computeStage(cb, STAGE_VOTE, world.voteMapSize());
+			gtimer_stop();
+		
+			gtimer_start("tick");
+			computeStage(cb, STAGE_EVENT, world.size);
+			gtimer_stop();
+
+			ctrl.dispatch_counter++;
+		}
+
+		//update_timer.stop();
+		//gtimer_stop();
 	}
+	
+	//if (want_stats)
+	//	mfmComputeStats(gui_world_res);
+
+	//mfmSiteInfo(gui_world_res);
+
 	computeStage(cb, STAGE_RENDER, world.size);
+
+	mfmReadStats();
+
+	ctimer_stop();
 }
 void mfmRender(VkCommandBuffer cb) {
-	renderDraw(cb, world.size, camera_from_world);
+	RenderVis vis;
+	vis.event_window_amt = event_window_vis;
+	renderDraw(cb, world.size, camera_from_world, vis);
 }

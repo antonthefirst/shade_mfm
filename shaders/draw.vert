@@ -10,7 +10,7 @@ struct DrawUPC {
 layout(push_constant) uniform UPC {
 #endif
 	vec2 camera_from_world_shift; vec2 camera_from_world_scale;
-	float inv_camera_aspect;
+	float inv_camera_aspect; float screen_from_grid_scale; float event_window_vis;
 };
 
 layout(location = 0) in vec2 pos_in;

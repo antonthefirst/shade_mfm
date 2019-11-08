@@ -29,27 +29,15 @@ struct WindowRenderBuffers {
     FrameRenderBuffers*   Frames;
 };
 
-#if 1
 struct BasicQuad {
 	DrawVert verts[4] = {
-		{vec2(0.0f,0.0f), vec2(0.0f, 0.0f)}, //, 0xffffffff},
-		{vec2(1.0f,0.0f), vec2(1.0f, 0.0f)}, //, 0xffffffff},
-		{vec2(0.0f,1.0f), vec2(0.0f, 1.0f)}, //, 0xffffffff},
-		{vec2(1.0f,1.0f), vec2(1.0f, 1.0f)}, //, 0xffffffff},
+		{vec2(0.0f,0.0f), vec2(0.0f, 0.0f)},
+		{vec2(1.0f,0.0f), vec2(1.0f, 0.0f)},
+		{vec2(0.0f,1.0f), vec2(0.0f, 1.0f)},
+		{vec2(1.0f,1.0f), vec2(1.0f, 1.0f)},
 	};
 	DrawIdx  idxs[6] = { 0, 1, 2,  1, 3 , 2 };
 };
-#else
-struct BasicQuad {
-	DrawVert verts[4] = {
-		{vec2(0.0f,0.0f), vec2(0.0f, 0.0f), 0xffffffff},
-		{vec2(1.0f,0.0f), vec2(1.0f, 0.0f), 0xffffffff},
-		{vec2(0.0f,1.0f), vec2(0.0f, 1.0f), 0xffffffff},
-		{vec2(1.0f,1.0f), vec2(1.0f, 1.0f), 0xffffffff},
-	};
-	DrawIdx  idxs[6] = { 0, 1, 2,  1, 3 , 2 };
-};
-#endif
 
 }
 
@@ -113,7 +101,7 @@ static void destroyWindowRenderBuffers(WindowRenderBuffers* buffers) {
     buffers->Count = 0;
 }
 
-static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers* rb, ivec2 fb_size, ivec2 world_size, pose camera_from_world)
+static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers* rb, ivec2 fb_size, ivec2 world_size, pose camera_from_world, RenderVis vis)
 {
     // Bind pipeline and descriptor sets:
     {
@@ -143,33 +131,16 @@ static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers*
     }
 
     // Setup scale and translation:
-    // Our visible imgui space lies from draw_data->DisplayPps (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
     {
-		/*
-        float scale[2];
-        scale[0] = 2.0f / evk.win.Width;
-        scale[1] = 2.0f / evk.win.Height;
-        float translate[2];
-        translate[0] = -1.0f - 0.0f * scale[0];
-        translate[1] = -1.0f - 0.0f * scale[1];
-		*/
-		/*
-		float camera_aspect = float(screen_res.x) / float(screen_res.y);
-		float world_aspect = float(world_res.x) / float(world_res.y);
-		vec2 pos = camera_from_world.xy();
-		vec2 scale = vec2(world_aspect, 1.0f) * vec2(world_res.y) * scaleof(camera_from_world);
-		glUniform2f(20, pos.x, pos.y);
-		glUniform2f(21, scale.x, scale.y);
-		glUniform1f(22, 1.0f / camera_aspect);
-		glUniform1f(23, float(screen_res.y) / float(world_res.y) * scale.y); 
-		*/
 		float camera_aspect = float(fb_size.x) / float(fb_size.y);
 		float world_aspect = float(world_size.x) / float(world_size.y);
 		DrawUPC upc;
 		upc.camera_from_world_shift = camera_from_world.xy();
 		upc.camera_from_world_scale = vec2(world_aspect, 1.0f) * vec2(world_size.y) * scaleof(camera_from_world);
 		upc.inv_camera_aspect = 1.0f / camera_aspect;
-        vkCmdPushConstants(command_buffer, g_PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(DrawUPC), &upc);
+		upc.screen_from_grid_scale = float(fb_size.y) / float(world_size.y) * upc.camera_from_world_scale.y;
+		upc.event_window_vis = vis.event_window_amt;
+        vkCmdPushConstants(command_buffer, g_PipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DrawUPC), &upc);
     }
 }
 
@@ -191,7 +162,7 @@ void renderRecreatePipelineIfNeeded() {
 		free((void*)vert_info.pCode);
         VkShaderModuleCreateInfo frag_info = {};
         frag_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		frag_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/basic.frag.spv", &frag_info.codeSize);
+		frag_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/draw.frag.spv", &frag_info.codeSize);
         err = vkCreateShaderModule(evk.dev, &frag_info, evk.alloc, &frag_module);
         evkCheckError(err);
 		free((void*)frag_info.pCode);
@@ -205,9 +176,9 @@ void renderRecreatePipelineIfNeeded() {
         info.magFilter = VK_FILTER_NEAREST;
         info.minFilter = VK_FILTER_NEAREST;
         info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
         info.minLod = -1000;
         info.maxLod = 1000;
         info.maxAnisotropy = 1.0f;
@@ -218,18 +189,18 @@ void renderRecreatePipelineIfNeeded() {
 	
     if (!g_DescriptorSetLayout)
     {
-        VkSampler sampler[1] = {g_Sampler};
-        VkDescriptorSetLayoutBinding binding[1] = {};
-        binding[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding[0].descriptorCount = 1;
-        binding[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        binding[0].pImmutableSamplers = sampler;
-        VkDescriptorSetLayoutCreateInfo info = {};
-        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.bindingCount = 1;
-        info.pBindings = binding;
-        err = vkCreateDescriptorSetLayout(evk.dev, &info, evk.alloc, &g_DescriptorSetLayout);
-        evkCheckError(err);
+		VkDescriptorSetLayoutBinding setLayoutBindings[] = {
+			evkMakeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
+			evkMakeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+		};
+		VkSampler color_sampler[1] = {g_Sampler};
+		setLayoutBindings[0].pImmutableSamplers = color_sampler;
+		VkSampler dev_sampler[1] = {g_Sampler};
+		setLayoutBindings[1].pImmutableSamplers = dev_sampler;
+
+		VkDescriptorSetLayoutCreateInfo descriptorLayout = evkMakeDescriptorSetLayoutCreateInfo(setLayoutBindings, ARRSIZE(setLayoutBindings));
+		err = vkCreateDescriptorSetLayout(evk.dev, &descriptorLayout, evk.alloc, &g_DescriptorSetLayout);
+		evkCheckError(err);
     }
 	
 
@@ -249,7 +220,7 @@ void renderRecreatePipelineIfNeeded() {
     //if (!g_PipelineLayout)
     {
         VkPushConstantRange push_constants[1] = {};
-        push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         push_constants[0].size = sizeof(DrawUPC);
         VkDescriptorSetLayout set_layout[1] = { g_DescriptorSetLayout };
         VkPipelineLayoutCreateInfo layout_info = {};
@@ -285,12 +256,6 @@ void renderRecreatePipelineIfNeeded() {
     attribute_desc[1].binding = binding_desc[0].binding;
     attribute_desc[1].format = VK_FORMAT_R32G32_SFLOAT;
     attribute_desc[1].offset = IM_OFFSETOF(DrawVert, uv);
-	/*
-    attribute_desc[2].location = 2;
-    attribute_desc[2].binding = binding_desc[0].binding;
-    attribute_desc[2].format = VK_FORMAT_R8G8B8A8_UNORM;
-    attribute_desc[2].offset = IM_OFFSETOF(DrawVert, col);
-	*/
 
     VkPipelineVertexInputStateCreateInfo vertex_info = {};
     vertex_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -377,7 +342,7 @@ void renderDestroy() {
     if (g_PipelineLayout)       { vkDestroyPipelineLayout(evk.dev, g_PipelineLayout, evk.alloc); g_PipelineLayout = VK_NULL_HANDLE; }
     if (g_Pipeline)             { vkDestroyPipeline(evk.dev, g_Pipeline, evk.alloc); g_Pipeline = VK_NULL_HANDLE; }
 }
-void renderDraw(VkCommandBuffer command_buffer, ivec2 world_size, pose camera_from_world) {
+void renderDraw(VkCommandBuffer command_buffer, ivec2 world_size, pose camera_from_world, RenderVis vis) {
     // Allocate array to store enough vertex/index buffers
     WindowRenderBuffers* wrb = &g_MainWindowRenderBuffers;
     if (wrb->Frames == NULL)
@@ -425,7 +390,7 @@ void renderDraw(VkCommandBuffer command_buffer, ivec2 world_size, pose camera_fr
     }
 
     // Setup desired Vulkan state
-    setupRenderState(command_buffer, rb, ivec2(evk.win.Width, evk.win.Height), world_size, camera_from_world);
+    setupRenderState(command_buffer, rb, ivec2(evk.win.Width, evk.win.Height), world_size, camera_from_world, vis);
 
     VkRect2D scissor;
     scissor.offset.x = 0;

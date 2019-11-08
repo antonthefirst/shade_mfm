@@ -104,7 +104,8 @@ struct World {
 
 	ivec2 size = ivec2(0,0);
 
-	VkImageView render_view = VK_NULL_HANDLE;
+	VkImageView color_draw_view = VK_NULL_HANDLE;
+	VkImageView dev_draw_view = VK_NULL_HANDLE;
 
 	void destroy();
 	bool resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDescriptorSet draw_descriptor_set, VkSampler draw_sampler);

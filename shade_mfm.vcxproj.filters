@@ -412,5 +412,8 @@
     <None Include="shaders\draw_shared.inl">
       <Filter>shaders</Filter>
     </None>
+    <None Include="shaders\maths.inl">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
