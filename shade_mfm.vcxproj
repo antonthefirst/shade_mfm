@@ -190,6 +190,7 @@
     <ClCompile Include="core\log.cpp" />
     <ClCompile Include="core\maths.cpp" />
     <ClCompile Include="core\pose.cpp" />
+    <ClCompile Include="core\runprog.cpp" />
     <ClCompile Include="core\shader_loader.cpp" />
     <ClCompile Include="core\vec2.cpp" />
     <ClCompile Include="core\vec3.cpp" />
@@ -226,6 +227,7 @@
     <ClInclude Include="core\dir.h" />
     <ClInclude Include="core\file_stat.h" />
     <ClInclude Include="core\gl_message_log.h" />
+    <ClInclude Include="core\runprog.h" />
     <ClInclude Include="core\win_dirent.h" />
     <ClInclude Include="core\gpu_timer.h" />
     <ClInclude Include="core\log.h" />

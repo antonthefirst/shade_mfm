@@ -3,11 +3,58 @@
 
 #pragma once
 #include <vulkan/vulkan.h>
+#include "core/vec2.h"
 #include "core/basic_types.h"
 
-// #TODO replace with own structs
-#include "imgui/imgui.h"
-#include "wrap/imgui_impl_vulkan.h"
+
+// Helper structure to hold the data needed by one rendering frame
+// (Used by example's main.cpp. Used by multi-viewport features. Probably NOT used by your own engine/app.)
+// [Please zero-clear before use!]
+struct EasyVkFrame
+{
+	VkCommandPool       CommandPool;
+	VkCommandBuffer     CommandBuffer;
+	VkFence             Fence;
+	VkImage             Backbuffer;
+	VkImageView         BackbufferView;
+	VkFramebuffer       Framebuffer;
+};
+
+struct EasyVkFrameTimestamps {
+	VkQueryPool			QueryPool;
+	int                 QueryCount;
+};
+
+struct EasyVkFrameSemaphores
+{
+	VkSemaphore         ImageAcquiredSemaphore;
+	VkSemaphore         RenderCompleteSemaphore;
+};
+
+// Helper structure to hold the data needed by one rendering context into one OS window
+// (Used by example's main.cpp. Used by multi-viewport features. Probably NOT used by your own engine/app.)
+struct EasyVkWindow
+{
+	int                 Width;
+	int                 Height;
+	VkSwapchainKHR      Swapchain;
+	VkSurfaceKHR        Surface;
+	VkSurfaceFormatKHR  SurfaceFormat;
+	VkPresentModeKHR    PresentMode;
+	VkRenderPass        RenderPass;
+	bool                ClearEnable;
+	VkClearValue        ClearValue;
+	uint32_t            FrameIndex;             // Current frame being rendered to (0 <= FrameIndex < FrameInFlightCount)
+	uint32_t            ImageCount;             // Number of simultaneous in-flight frames (returned by vkGetSwapchainImagesKHR, usually derived from min_image_count)
+	uint32_t            FrameTimestampsCount;   // Number of frames of timestamps kept
+	uint32_t            SemaphoreIndex;         // Current set of swapchain wait semaphores we're using (needs to be distinct from per frame data)
+	uint32_t            TimestampIndex;         // Current timestamp query pool we're using (needs to be distinct because it's got a longer history)
+	EasyVkFrame*            Frames;
+	EasyVkFrameSemaphores*  FrameSemaphores;    
+	EasyVkFrameTimestamps*  FrameTimestamps;    // size is FrameTimestampsCount
+
+	EasyVkWindow();
+};
 
 struct EasyVk {
 	VkInstance inst;
@@ -19,7 +66,9 @@ struct EasyVk {
 	VkDescriptorPool desc_pool;
 	VkPipelineCache pipe_cache;
 	VkDebugReportCallbackEXT debug;
-	ImGui_ImplVulkanH_Window win;
+	EasyVkWindow win;
+	VkPhysicalDeviceProperties phys_props;
+	VkQueueFamilyProperties que_fam_props;
 };
 
 typedef void (*EasyVkCheckErrorFunc)(VkResult err);
@@ -28,6 +77,8 @@ extern EasyVk evk;
 
 void evkInit(const char** extensions, uint32_t extensions_count);
 void evkTerm();
+
+VkShaderModule evkCreateShaderFromFile(const char* pathfile);
 
 uint32_t evkMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits);
 int  evkMinImageCount();
@@ -46,6 +97,10 @@ void evkRenderBegin();
 VkCommandBuffer evkGetRenderCommandBuffer();
 void evkRenderEnd();
 void evkFramePresent();
+
+void evkTimeFrameReset();
+void evkTimeFrameGet();
+int  evkTimeQuery(VkPipelineStageFlagBits stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
 void evkWaitUntilDeviceIdle();
 void evkWaitUntilReadyToTerm();

@@ -441,9 +441,11 @@ void mfmTerm() {
 }
 
 void mfmUpdate(Input* main_in) {
+	ctimer_start("update");
 	computeRecreatePipelineIfNeeded();
 	renderRecreatePipelineIfNeeded();
 
+	ctimer_start("controls");
 	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
 	
 	ctrl.do_reset = false;
@@ -516,6 +518,10 @@ void mfmUpdate(Input* main_in) {
 		camera_from_world = mouse_zoom_diff * camera_from_world;
 		camera_from_world = mouse_pan_diff * camera_from_world;
 	}
+
+	ctimer_stop(); // controls
+
+	ctimer_start("stats"); //
 
 	static s64 time_of_frame_start = 0;
 	float sec_per_frame = run ? time_to_sec(time_counter() - time_of_frame_start) : 0.0f;
@@ -664,12 +670,17 @@ void mfmUpdate(Input* main_in) {
 		}
 	} gui::End();
 
+	ctimer_stop(); // stats
+
 	if (open_shader_gui)
 		guiShader(&open_shader_gui);
+
+	ctimer_stop(); // update
 }
 
 void mfmCompute(VkCommandBuffer cb) {
-	ctimer_start("update"); 
+	ctimer_start("compute"); 
+	
 	ComputeArgs args;
 	args.site_info_idx = site_info_idx;
 	computeBegin(cb, args);
@@ -686,6 +697,7 @@ void mfmCompute(VkCommandBuffer cb) {
 
 	mfmClearStats();
 
+	evkTimeQuery();
 	if (ctrl.dispatches_per_batch > 0) {;
 		//update_timer.reset();
 		//update_timer.start("batch");
@@ -708,20 +720,25 @@ void mfmCompute(VkCommandBuffer cb) {
 		//update_timer.stop();
 		//gtimer_stop();
 	}
+	evkTimeQuery();
 	
 	//if (want_stats)
 	//	mfmComputeStats(gui_world_res);
 
 	//mfmSiteInfo(gui_world_res);
-
+	
+	evkTimeQuery();
 	computeStage(cb, STAGE_RENDER, world.size);
+	evkTimeQuery();
 
 	mfmReadStats();
 
 	ctimer_stop();
 }
 void mfmRender(VkCommandBuffer cb) {
+	ctimer_start("render");
 	RenderVis vis;
 	vis.event_window_amt = event_window_vis;
 	renderDraw(cb, world.size, camera_from_world, vis);
+	ctimer_stop();
 }

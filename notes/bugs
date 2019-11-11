@@ -1,0 +1,5 @@
+on first frame, before any pool has been reset, the timestamp before the reset goes to a non-reset query
+  -> reset all the pools at start somehow, during initial cb blast
+consider rewriting it tho and just having a special "end timestamp" just like the special "start timestamp". since it's really the same as having the query around the present, just instead draw "present" as "end of frame -> start of next frame". by definition it will be that. can potentially submit another one after present (but to what cb??), yeah that makes no sense. need to wait until acquire to get a cb to submit, at which point it's basically the first thing in there. i guess it's slightly more accurate than doing it after a reset or whatever.
+
+sometimes on ESC exit, there is a access violation reading the vk.inst. smells fishy, i don't remember it before i added the timestamp queries. appears to happen more under heavy load, perhaps when missing frame rate, and queries are backed up? actually maybe more like after running longer? is a buffer getting too full and not being cleared?

@@ -1,12 +1,17 @@
 #include "evk.h"
 #include <string.h>   // for memcpy
 #include "core/log.h" // for assert
+#include "core/file_stat.h"    // for loading binary
+#include "core/string_range.h" // for compiler output
+#include "core/runprog.h"      // for calling compiler
+#include "core/container.h"    // for surface results
+
+#define QUERIES_PER_FRAME_MAX (64)
 
 static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode);
-static void destroyAllFramesAndSemaphores();
+static void destroyAllFramesAndSemaphoresAndTimestamps();
 
 EasyVk evk;
-
 
 const char* errorString(VkResult errorCode) {
 	switch (errorCode)
@@ -52,6 +57,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_report(VkDebugReportFlagsEXT flags, 
     (void)flags; (void)object; (void)location; (void)messageCode; (void)pUserData; (void)pLayerPrefix; // Unused arguments
 	logError("VK", objectType, pMessage);
     return VK_FALSE;
+}
+
+
+EasyVkWindow::EasyVkWindow() {
+	memset(this, 0, sizeof(*this));
+	PresentMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+	ClearEnable = true;
 }
 
 void evkInit(const char** extensions, uint32_t extensions_count) {
@@ -126,6 +138,11 @@ void evkInit(const char** extensions, uint32_t extensions_count) {
         free(gpus);
     }
 
+	// Get stats about physical device
+	{
+		vkGetPhysicalDeviceProperties(evk.phys_dev, &evk.phys_props);
+	}
+
     // Select graphics queue family
     {
         uint32_t count;
@@ -138,6 +155,7 @@ void evkInit(const char** extensions, uint32_t extensions_count) {
                 evk.que_fam = i;
                 break;
             }
+		evk.que_fam_props = queues[evk.que_fam];
         free(queues);
         assert(evk.que_fam != (uint32_t)-1);
     }
@@ -190,12 +208,12 @@ void evkInit(const char** extensions, uint32_t extensions_count) {
     }
 }
 void evkTerm() {
-	destroyAllFramesAndSemaphores();
+	destroyAllFramesAndSemaphoresAndTimestamps();
     vkDestroyRenderPass(evk.dev, evk.win.RenderPass, evk.alloc);
     vkDestroySwapchainKHR(evk.dev, evk.win.Swapchain, evk.alloc);
     vkDestroySurfaceKHR(evk.inst, evk.win.Surface, evk.alloc);
 
-    evk.win = ImGui_ImplVulkanH_Window();
+    evk.win = EasyVkWindow();
 
 	// Destroy core vulkan objects
 	vkDestroyDescriptorPool(evk.dev, evk.desc_pool, evk.alloc);
@@ -203,6 +221,29 @@ void evkTerm() {
     vkDestroyDebugReportCallbackEXT(evk.inst, evk.debug, evk.alloc);
     vkDestroyDevice(evk.dev, evk.alloc);
     vkDestroyInstance(evk.inst, evk.alloc);
+}
+
+VkShaderModule evkCreateShaderFromFile(const char* pathfile) {
+	VkResult err;
+	String output;
+
+	runProg(TempStr("glslc -o %s.spv %s", pathfile, pathfile), &output);
+
+	if (output.len > 0) {
+		log(output.str);
+		return VK_NULL_HANDLE; //#TODO right now this will bail on warnings too
+	}
+	output.free();
+
+	VkShaderModule module = VK_NULL_HANDLE;
+    VkShaderModuleCreateInfo info = {};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	info.pCode = (uint32_t*)fileReadBinaryIntoMem(TempStr("%s.spv", pathfile), &info.codeSize);
+    err = vkCreateShaderModule(evk.dev, &info, evk.alloc, &module);
+	check_vk_result(err);
+	free((void*)info.pCode);
+
+	return module;
 }
 uint32_t evkMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits) {
     VkPhysicalDeviceMemoryProperties prop;
@@ -214,6 +255,69 @@ uint32_t evkMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits) {
 }
 int evkMinImageCount() {
 	return getMinImageCountFromPresentMode(evk.win.PresentMode);
+}
+static VkSurfaceFormatKHR SelectSurfaceFormat(VkPhysicalDevice physical_device, VkSurfaceKHR surface, const VkFormat* request_formats, int request_formats_count, VkColorSpaceKHR request_color_space) {
+	assert(request_formats != NULL);
+	assert(request_formats_count > 0);
+
+	// Per Spec Format and View Format are expected to be the same unless VK_IMAGE_CREATE_MUTABLE_BIT was set at image creation
+	// Assuming that the default behavior is without setting this bit, there is no need for separate Swapchain image and image view format
+	// Additionally several new color spaces were introduced with Vulkan Spec v1.0.40,
+	// hence we must make sure that a format with the mostly available color space, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, is found and used.
+	uint32_t avail_count;
+	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &avail_count, NULL);
+	Bunch<VkSurfaceFormatKHR> avail_format;
+	avail_format.setgarbage((int)avail_count);
+	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &avail_count, avail_format.ptr);
+
+	// First check if only one format, VK_FORMAT_UNDEFINED, is available, which would imply that any format is available
+	if (avail_count == 1)
+	{
+		if (avail_format[0].format == VK_FORMAT_UNDEFINED)
+		{
+			VkSurfaceFormatKHR ret;
+			ret.format = request_formats[0];
+			ret.colorSpace = request_color_space;
+			return ret;
+		}
+		else
+		{
+			// No point in searching another format
+			return avail_format[0];
+		}
+	}
+	else
+	{
+		// Request several formats, the first found will be used
+		for (int request_i = 0; request_i < request_formats_count; request_i++)
+			for (uint32_t avail_i = 0; avail_i < avail_count; avail_i++)
+				if (avail_format[avail_i].format == request_formats[request_i] && avail_format[avail_i].colorSpace == request_color_space)
+					return avail_format[avail_i];
+
+		// If none of the requested image formats could be found, use the first available
+		return avail_format[0];
+	}
+}
+
+static VkPresentModeKHR SelectPresentMode(VkPhysicalDevice physical_device, VkSurfaceKHR surface, const VkPresentModeKHR* request_modes, int request_modes_count){
+	assert(request_modes != NULL);
+	assert(request_modes_count > 0);
+
+	// Request a certain mode and confirm that it is available. If not use VK_PRESENT_MODE_FIFO_KHR which is mandatory
+	uint32_t avail_count = 0;
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &avail_count, NULL);
+	Bunch<VkPresentModeKHR> avail_modes;
+	avail_modes.setgarbage((int)avail_count);
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &avail_count, avail_modes.ptr);
+	//for (uint32_t avail_i = 0; avail_i < avail_count; avail_i++)
+	//    printf("[vulkan] avail_modes[%d] = %d\n", avail_i, avail_modes[avail_i]);
+
+	for (int request_i = 0; request_i < request_modes_count; request_i++)
+		for (uint32_t avail_i = 0; avail_i < avail_count; avail_i++)
+			if (request_modes[request_i] == avail_modes[avail_i])
+				return request_modes[request_i];
+
+	return VK_PRESENT_MODE_FIFO_KHR; // Always available
 }
 void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	evk.win.Surface = surface;
@@ -229,7 +333,7 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	// Select Surface Format
 	const VkFormat requestSurfaceImageFormat[] = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8_UNORM, VK_FORMAT_R8G8B8_UNORM };
 	const VkColorSpaceKHR requestSurfaceColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-	evk.win.SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(evk.phys_dev, evk.win.Surface, requestSurfaceImageFormat, (size_t)ARRSIZE(requestSurfaceImageFormat), requestSurfaceColorSpace);
+	evk.win.SurfaceFormat = SelectSurfaceFormat(evk.phys_dev, evk.win.Surface, requestSurfaceImageFormat, (size_t)ARRSIZE(requestSurfaceImageFormat), requestSurfaceColorSpace);
 
 	// Select Present Mode
 	#ifdef UNLIMITED_FRAME_RATE
@@ -237,8 +341,8 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	#else
 	VkPresentModeKHR present_modes[] = { VK_PRESENT_MODE_FIFO_KHR };
 	#endif
-	evk.win.PresentMode = ImGui_ImplVulkanH_SelectPresentMode(evk.phys_dev, evk.win.Surface, &present_modes[0], ARRSIZE(present_modes));
-	logInfo("VK", "Selected PresentMode = %d", evk.win.PresentMode);
+	evk.win.PresentMode = SelectPresentMode(evk.phys_dev, evk.win.Surface, &present_modes[0], ARRSIZE(present_modes));
+	log("PICKED MODE %d\n", evk.win.PresentMode);
 }
 void evkResizeWindow(ivec2 res) {
     VkResult err;
@@ -248,7 +352,7 @@ void evkResizeWindow(ivec2 res) {
 
     // Destroy old Framebuffer
     // We don't use DestroyWindow() because we want to preserve the old swapchain to create the new one.
-	destroyAllFramesAndSemaphores();
+	destroyAllFramesAndSemaphoresAndTimestamps();
     if (evk.win.RenderPass)
         vkDestroyRenderPass(evk.dev, evk.win.RenderPass, evk.alloc);
 
@@ -298,11 +402,15 @@ void evkResizeWindow(ivec2 res) {
         err = vkGetSwapchainImagesKHR(evk.dev, evk.win.Swapchain, &evk.win.ImageCount, backbuffers);
         check_vk_result(err);
 
+		evk.win.FrameTimestampsCount = evk.win.ImageCount * 3; // enough frames to handle spill of render times
+
         assert(evk.win.Frames == NULL);
-        evk.win.Frames = (ImGui_ImplVulkanH_Frame*)malloc(sizeof(ImGui_ImplVulkanH_Frame) * evk.win.ImageCount);
-        evk.win.FrameSemaphores = (ImGui_ImplVulkanH_FrameSemaphores*)malloc(sizeof(ImGui_ImplVulkanH_FrameSemaphores) * evk.win.ImageCount);
+        evk.win.Frames = (EasyVkFrame*)malloc(sizeof(EasyVkFrame) * evk.win.ImageCount);
+        evk.win.FrameSemaphores = (EasyVkFrameSemaphores*)malloc(sizeof(EasyVkFrameSemaphores) * evk.win.ImageCount);
+		evk.win.FrameTimestamps = (EasyVkFrameTimestamps*)malloc(sizeof(EasyVkFrameTimestamps) * evk.win.FrameTimestampsCount);
         memset(evk.win.Frames, 0, sizeof(evk.win.Frames[0]) * evk.win.ImageCount);
         memset(evk.win.FrameSemaphores, 0, sizeof(evk.win.FrameSemaphores[0]) * evk.win.ImageCount);
+		memset(evk.win.FrameTimestamps, 0, sizeof(evk.win.FrameSemaphores[0]) * evk.win.FrameTimestampsCount);
         for (uint32_t i = 0; i < evk.win.ImageCount; i++)
             evk.win.Frames[i].Backbuffer = backbuffers[i];
     }
@@ -360,7 +468,7 @@ void evkResizeWindow(ivec2 res) {
         info.subresourceRange = image_range;
         for (uint32_t i = 0; i < evk.win.ImageCount; i++)
         {
-            ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[i];
+            EasyVkFrame* fd = &evk.win.Frames[i];
             info.image = fd->Backbuffer;
             err = vkCreateImageView(evk.dev, &info, evk.alloc, &fd->BackbufferView);
             check_vk_result(err);
@@ -380,19 +488,19 @@ void evkResizeWindow(ivec2 res) {
         info.layers = 1;
         for (uint32_t i = 0; i < evk.win.ImageCount; i++)
         {
-            ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[i];
+            EasyVkFrame* fd = &evk.win.Frames[i];
             attachment[0] = fd->BackbufferView;
             err = vkCreateFramebuffer(evk.dev, &info, evk.alloc, &fd->Framebuffer);
             check_vk_result(err);
         }
     }
 
-	// Create Command Buffers, Fences and Semaphores
+	// Create Command Buffers, Fences, Semaphores and Query Pools
 	assert(evk.phys_dev != VK_NULL_HANDLE && evk.dev != VK_NULL_HANDLE);
     for (uint32_t i = 0; i < evk.win.ImageCount; i++)
     {
-        ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[i];
-        ImGui_ImplVulkanH_FrameSemaphores* fsd = &evk.win.FrameSemaphores[i];
+        EasyVkFrame* fd = &evk.win.Frames[i];
+        EasyVkFrameSemaphores* fsd = &evk.win.FrameSemaphores[i];
         {
             VkCommandPoolCreateInfo info = {};
             info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -426,6 +534,17 @@ void evkResizeWindow(ivec2 res) {
             check_vk_result(err);
         }
     }
+
+	// Create Frame Timestamp Query Pools:
+	for (uint32_t i = 0; i < evk.win.FrameTimestampsCount; i++) {
+		EasyVkFrameTimestamps* ftd = &evk.win.FrameTimestamps[i];		
+		VkQueryPoolCreateInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+		info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+		info.queryCount = QUERIES_PER_FRAME_MAX;
+		err = vkCreateQueryPool(evk.dev, &info, evk.alloc, &ftd->QueryPool);
+		check_vk_result(err);	
+	}
 }
 void evkCheckError(VkResult err) {
 	check_vk_result(err);
@@ -483,7 +602,7 @@ void evkFrameAcquire() {
     err = vkAcquireNextImageKHR(evk.dev, evk.win.Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &evk.win.FrameIndex);
     check_vk_result(err);
 
-	ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[evk.win.FrameIndex];
+	EasyVkFrame* fd = &evk.win.Frames[evk.win.FrameIndex];
 
 	{
         err = vkWaitForFences(evk.dev, 1, &fd->Fence, VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
@@ -511,7 +630,7 @@ void evkFrameAcquire() {
 void evkRenderBegin() {
     VkResult err;
 
-    ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[evk.win.FrameIndex];
+    EasyVkFrame* fd = &evk.win.Frames[evk.win.FrameIndex];
     {
         VkRenderPassBeginInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -530,7 +649,7 @@ VkCommandBuffer evkGetRenderCommandBuffer() {
 void evkRenderEnd() {
 	VkResult err;
 
-	ImGui_ImplVulkanH_Frame* fd = &evk.win.Frames[evk.win.FrameIndex];
+	EasyVkFrame* fd = &evk.win.Frames[evk.win.FrameIndex];
 	// Submit command buffer
     vkCmdEndRenderPass(fd->CommandBuffer);
     {
@@ -578,10 +697,11 @@ static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode) {
     return 1;
 }
 
-static void destroyFrame(ImGui_ImplVulkanH_Frame* fd) {
+static void destroyFrame(EasyVkFrame* fd) {
 	vkDestroyFence(evk.dev, fd->Fence, evk.alloc);
     vkFreeCommandBuffers(evk.dev, fd->CommandPool, 1, &fd->CommandBuffer);
     vkDestroyCommandPool(evk.dev, fd->CommandPool, evk.alloc);
+	
     fd->Fence = VK_NULL_HANDLE;
     fd->CommandBuffer = VK_NULL_HANDLE;
     fd->CommandPool = VK_NULL_HANDLE;
@@ -589,21 +709,161 @@ static void destroyFrame(ImGui_ImplVulkanH_Frame* fd) {
     vkDestroyImageView(evk.dev, fd->BackbufferView, evk.alloc);
     vkDestroyFramebuffer(evk.dev, fd->Framebuffer, evk.alloc);
 }
-static void destroyFrameSemaphores(ImGui_ImplVulkanH_FrameSemaphores* fsd) {
+static void destroyFrameSemaphores(EasyVkFrameSemaphores* fsd) {
 	vkDestroySemaphore(evk.dev, fsd->ImageAcquiredSemaphore, evk.alloc);
     vkDestroySemaphore(evk.dev, fsd->RenderCompleteSemaphore, evk.alloc);
     fsd->ImageAcquiredSemaphore = fsd->RenderCompleteSemaphore = VK_NULL_HANDLE;
 }
-static void destroyAllFramesAndSemaphores() {
+static void destroyFrameTimestamps(EasyVkFrameTimestamps* ftd) {
+	vkDestroyQueryPool(evk.dev, ftd->QueryPool, evk.alloc);
+}
+static void destroyAllFramesAndSemaphoresAndTimestamps() {
 	for (uint32_t i = 0; i < evk.win.ImageCount; i++) {
         destroyFrame(&evk.win.Frames[i]);
         destroyFrameSemaphores(&evk.win.FrameSemaphores[i]);
     }
+	for (uint32_t i = 0; i < evk.win.ImageCount; i++)
+		destroyFrameTimestamps(&evk.win.FrameTimestamps[i]);
 	free(evk.win.Frames);
     free(evk.win.FrameSemaphores);
+	free(evk.win.FrameTimestamps);
     evk.win.Frames = NULL;
     evk.win.FrameSemaphores = NULL;
     evk.win.ImageCount = 0;
+	evk.win.FrameTimestampsCount = 0;
+}
+
+#include "imgui/imgui.h"
+
+static void evkTimerGUI(int64_t time_of_prev_frame_start, int64_t time_of_frame_start, int64_t* times, int times_count) {
+	const float ms_per_frame = 1000.0f / 144.0f;
+	int64_t del = time_of_frame_start - time_of_prev_frame_start;
+	float frame_ms = double(del) / 1000000.0 * evk.phys_props.limits.timestampPeriod;
+
+	static bool show_timeline = true;
+
+	// apply hysteresis to frame_ms:
+	// ignore frames that are insanely long or that aren't that much smaller than before
+	static int frame_range_hyst = 0;
+	int frame_range = int(frame_ms / ms_per_frame) + 1;
+	if (frame_range < 16 && frame_range > frame_range_hyst)
+		frame_range_hyst = frame_range;
+	else if (frame_range < (frame_range_hyst - 1))
+		frame_range_hyst = frame_range;
+		
+	const double nanosec_per_count = evk.phys_props.limits.timestampPeriod;
+	const double ms_per_count = nanosec_per_count / 1000000.0;
+	const char* texts[] = { "update", "clear stats", "render", "draw", "swap", "other", "last" };
+	//ImU32 label_cols[ARRSIZE(texts)] = { 0x80404080, 0x80408040, 0x80804040, 0x80408080, 0x80804080, 0x80808040};
+	ImU32 label_cols[ARRSIZE(texts)] = { 0xff404080, 0xff408040, 0xff804040, 0xff408080, 0xff804080, 0xff808040};
+	int label_chars_max = 0;
+	for (int i = 0; i < ARRSIZE(texts); ++i)
+		label_chars_max = max(label_chars_max, (int)strlen(texts[i]));
+	const int label_count = times_count-1;
+	const float pixels_from_ms = 15.0f; 
+	const float bars_x_start = float(label_chars_max + 9) * gui::GetFont()->FallbackAdvanceX;
+
+	gui::SetNextWindowSize(vec2(show_timeline ? 800.0f : bars_x_start + gui::GetStyle().WindowPadding.x, 0.0f));
+	if (gui::Begin("GPU Timers", 0, ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (show_timeline && gui::Button("collapse", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = false;
+		else if (!show_timeline && gui::Button("expand", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = true;
+		if (frame_ms < 0.0) {
+			log("Strange frametime: %6.3f (curr=%lld [0x%x] prev=%lld [0x%x])\n", frame_ms, time_of_frame_start, time_of_frame_start, time_of_prev_frame_start, time_of_prev_frame_start);
+		}
+
+		ImDrawList* dl = gui::GetWindowDrawList();
+		const vec2 cs = gui::GetContentRegionAvail();
+
+		gui::Text("%*s  %6.3f", -label_chars_max, "frame", frame_ms);
+
+		const ImU32 major_grid_col = 0xff888888;
+		const ImU32 minor_grid_col = 0xff444444;
+		const ImU32 frame_grid_col = 0xff444488;
+		const ImU32 bar_col = 0x80eeeeee;
+		// Draw the grid:
+		if (show_timeline) {
+			const vec2 cp = gui::GetCursorScreenPos();
+			// starting line:
+			dl->AddLine(cp + vec2(bars_x_start, 0.0f), cp + vec2(bars_x_start, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), major_grid_col);
+			float ms = 1.0f;
+
+			while (ms < (frame_range_hyst * ms_per_frame)) {
+				float x = bars_x_start + ms * pixels_from_ms;
+				dl->AddLine(cp + vec2(x, 0.0f), cp + vec2(x, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), minor_grid_col);
+				ms += 1.0f;
+			}
+			float x = bars_x_start + ms_per_frame * pixels_from_ms;
+			dl->AddLine(cp + vec2(x, 0.0f), cp + vec2(x, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), frame_grid_col);
+		}
+		
+		const vec2 cp_line = gui::GetCursorScreenPos();
+		for (int i = 0; i < label_count; ++i) {
+			int64_t del = times[i+1] - times[i];
+			float ms = double(del) * nanosec_per_count / 1000000.0;
+
+			const vec2 cp = gui::GetCursorScreenPos();
+			//if (show_timeline)
+				dl->AddRectFilled(cp, cp + vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, gui::GetTextLineHeightWithSpacing()), label_cols[i]);
+			gui::Text("%*s  %6.3f", -label_chars_max, texts[i%ARRSIZE(texts)], ms);
+			if (show_timeline) {
+				/* feels redundant if there is room to draw over label
+				if (gui::GetMousePos().x >= (cp.x + bars_x_start) &&
+					gui::GetMousePos().y >= cp.y && gui::GetMousePos().y < (cp.y + gui::GetTextLineHeightWithSpacing())) {
+					gui::BeginTooltip();
+					gui::Text("%s: %6.3f", texts[i%ARRSIZE(texts)], ms);
+					gui::EndTooltip();
+				}
+				*/
+				const vec2 cp = cp_line;
+				vec2 s = vec2(bars_x_start + double(times[i] - time_of_frame_start) * ms_per_count * pixels_from_ms, 0.0f);
+				vec2 e = vec2(bars_x_start + double(times[i+1] - time_of_frame_start) * ms_per_count * pixels_from_ms, gui::GetTextLineHeightWithSpacing());
+				dl->AddRectFilled(cp + s, cp + e, label_cols[i]);
+				//dl->AddRect(cp + s, cp + e, major_grid_col); // nice to see "something" for all the pieces, but also a huge false impression of "negilible" vs "very small but existent"
+
+				// nice to know the exact number, but without also seeing the label you can't tell what the number belongs to, so still have to look over. tooltip of "label: time" is better (though requires mouse)
+				// actually really nice if we use color, because easy to remember "blue is update" etc.
+				if (ms > 1.0) {
+					TempStr digits = TempStr("%.1f", ms);
+					dl->AddText(cp + vec2((s.x + e.x)*0.5f - gui::GetFont()->FallbackAdvanceX * digits.len * 0.5f, s.y), 0xffffffff, digits.str);
+					//dl->AddText(cp + vec2(e.x, s.y), 0xffffffff, digits.str);
+					//dl->AddText(cp + s - vec2((strlen(texts[i]) * gui::GetFont()->FallbackAdvanceX), 0.0f), 0xffffffff, texts[i%ARRSIZE(texts)]);
+				}
+				
+			}
+		}
+	} gui::End();
+}
+void evkTimeFrameGet() {
+	// Read results from the last frame in the chain (FrameIdx + 1) % count = tail)
+	EasyVkFrameTimestamps* ft_prev = &evk.win.FrameTimestamps[(evk.win.TimestampIndex + 1) % evk.win.FrameTimestampsCount];
+	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[(evk.win.TimestampIndex + 2) % evk.win.FrameTimestampsCount];
+	int64_t times[QUERIES_PER_FRAME_MAX];
+	VkResult res = vkGetQueryPoolResults(evk.dev, ft->QueryPool, 0, ft->QueryCount, sizeof(times), times, sizeof(int64_t), VK_QUERY_RESULT_64_BIT);
+	if (res != VK_SUCCESS) {
+		log("Timestamp: %s\n", errorString(res));
+	}
+	int64_t times_prev[QUERIES_PER_FRAME_MAX];
+	VkResult res_prev = vkGetQueryPoolResults(evk.dev, ft_prev->QueryPool, 0, ft_prev->QueryCount, sizeof(times_prev), times_prev, sizeof(int64_t), VK_QUERY_RESULT_64_BIT);
+	if (res_prev != VK_SUCCESS) {
+		log("Timestamp Prev: %s\n", errorString(res_prev));
+	}
+	evkTimerGUI(times_prev[0], times[0], times+1, ft->QueryCount-1);
+}
+void evkTimeFrameReset() {
+	evk.win.TimestampIndex = (evk.win.TimestampIndex + 1) % evk.win.FrameTimestampsCount;
+	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[evk.win.TimestampIndex];
+	ft->QueryCount = 0;
+	vkCmdResetQueryPool(render_command_buffer, ft->QueryPool, 0, QUERIES_PER_FRAME_MAX); //#OPT does it help to move this to right after you consume the data?
+	evkTimeQuery(); // start of frame
+}
+int evkTimeQuery(VkPipelineStageFlagBits stage) {
+	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[evk.win.TimestampIndex];
+	assert(ft->QueryCount < QUERIES_PER_FRAME_MAX);
+	if (ft->QueryCount >= QUERIES_PER_FRAME_MAX) {
+		return -1;
+	}
+	vkCmdWriteTimestamp(render_command_buffer, stage, ft->QueryPool, ft->QueryCount++);
+	return ft->QueryCount-1;
 }
 
 void evkWaitUntilDeviceIdle() {

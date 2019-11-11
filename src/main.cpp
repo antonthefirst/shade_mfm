@@ -166,13 +166,14 @@ int main(int, char**)
 
 		imguiNewFrame();
 		ctimer_stop();
+		timerUI(in);
 		ctimer_reset();
 		ctimer_start("frame");
 
 		//ImGui::ShowDemoWindow();
 		mfmUpdate(&in);
-		timerUI(in);
 		guiShader();
+		evkTimeFrameGet();
 
 		ImGui::Render();
 
@@ -181,14 +182,17 @@ int main(int, char**)
 		memcpy(&evk.win.ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
 
 		evkFrameAcquire();
-
+		evkTimeQuery();
+		evkTimeFrameReset();
 		mfmCompute(evkGetRenderCommandBuffer());
 
 		evkRenderBegin();
 		mfmRender(evkGetRenderCommandBuffer());
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), evkGetRenderCommandBuffer());
+		evkTimeQuery();
 		evkRenderEnd();
 
+		
 		evkFramePresent();
 	}
 	evkWaitUntilReadyToTerm();

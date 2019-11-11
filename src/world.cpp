@@ -21,6 +21,8 @@ void World::destroy() {
 	      color.destroy();
 	event_count.destroy();
 	        dev.destroy();
+
+	size = ivec2(0,0);
 }
 bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDescriptorSet draw_descriptor_set, VkSampler draw_sampler) {
 	if (size == new_size) return true;
