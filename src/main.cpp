@@ -157,6 +157,7 @@ int main(int, char**)
 	Input in;
 	imguiInit(appGetWindow());
 
+	bool first_frame = true;
     while (!appShouldClose())
     {
 		inputPoll(appGetWindow(), in);
@@ -165,8 +166,10 @@ int main(int, char**)
 			recUIToggle();
 
 		imguiNewFrame();
-		ctimer_stop();
-		timerUI(in);
+		if (!first_frame)
+			ctimer_stop();
+		//timerUI(in);
+		ctimer_gui();
 		ctimer_reset();
 		ctimer_start("frame");
 
@@ -194,6 +197,8 @@ int main(int, char**)
 
 		
 		evkFramePresent();
+
+		first_frame = false;
 	}
 	evkWaitUntilReadyToTerm();
 	mfmTerm();

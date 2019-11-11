@@ -455,6 +455,7 @@ static TimerResult timer_results[TIMER_TREE_MAX_TIMERS];
 static GPUTimer gpu_timer;
 static bool cpu_timer_suspended = false;
 
+/*
 void ctimer_reset() {
 	ctimer.new_frame();
 }
@@ -464,6 +465,7 @@ void chashtimer_start(HashedString hs) {
 void chashtimer_stop() {
 	ctimer.stop();
 }
+*/
 
 void gtimer_reset() {
 	gpu_timer.reset();

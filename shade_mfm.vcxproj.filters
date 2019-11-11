@@ -109,6 +109,9 @@
     <ClCompile Include="core\runprog.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="core\timestamp_log.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="libs\imgui\imconfig.h">
@@ -250,6 +253,12 @@
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="core\runprog.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\hashed_string.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\timestamp_log.h">
       <Filter>core</Filter>
     </ClInclude>
   </ItemGroup>
