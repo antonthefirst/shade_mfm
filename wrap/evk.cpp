@@ -6,10 +6,8 @@
 #include "core/runprog.h"      // for calling compiler
 #include "core/container.h"    // for surface results
 
-#define QUERIES_PER_FRAME_MAX (64)
-
 static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode);
-static void destroyAllFramesAndSemaphoresAndTimestamps();
+static void destroyAllFramesAndSemaphores();
 
 EasyVk evk;
 
@@ -208,7 +206,7 @@ void evkInit(const char** extensions, uint32_t extensions_count) {
     }
 }
 void evkTerm() {
-	destroyAllFramesAndSemaphoresAndTimestamps();
+	destroyAllFramesAndSemaphores();
     vkDestroyRenderPass(evk.dev, evk.win.RenderPass, evk.alloc);
     vkDestroySwapchainKHR(evk.dev, evk.win.Swapchain, evk.alloc);
     vkDestroySurfaceKHR(evk.inst, evk.win.Surface, evk.alloc);
@@ -352,7 +350,7 @@ void evkResizeWindow(ivec2 res) {
 
     // Destroy old Framebuffer
     // We don't use DestroyWindow() because we want to preserve the old swapchain to create the new one.
-	destroyAllFramesAndSemaphoresAndTimestamps();
+	destroyAllFramesAndSemaphores();
     if (evk.win.RenderPass)
         vkDestroyRenderPass(evk.dev, evk.win.RenderPass, evk.alloc);
 
@@ -402,15 +400,11 @@ void evkResizeWindow(ivec2 res) {
         err = vkGetSwapchainImagesKHR(evk.dev, evk.win.Swapchain, &evk.win.ImageCount, backbuffers);
         check_vk_result(err);
 
-		evk.win.FrameTimestampsCount = evk.win.ImageCount * 3; // enough frames to handle spill of render times
-
         assert(evk.win.Frames == NULL);
         evk.win.Frames = (EasyVkFrame*)malloc(sizeof(EasyVkFrame) * evk.win.ImageCount);
         evk.win.FrameSemaphores = (EasyVkFrameSemaphores*)malloc(sizeof(EasyVkFrameSemaphores) * evk.win.ImageCount);
-		evk.win.FrameTimestamps = (EasyVkFrameTimestamps*)malloc(sizeof(EasyVkFrameTimestamps) * evk.win.FrameTimestampsCount);
         memset(evk.win.Frames, 0, sizeof(evk.win.Frames[0]) * evk.win.ImageCount);
         memset(evk.win.FrameSemaphores, 0, sizeof(evk.win.FrameSemaphores[0]) * evk.win.ImageCount);
-		memset(evk.win.FrameTimestamps, 0, sizeof(evk.win.FrameSemaphores[0]) * evk.win.FrameTimestampsCount);
         for (uint32_t i = 0; i < evk.win.ImageCount; i++)
             evk.win.Frames[i].Backbuffer = backbuffers[i];
     }
@@ -534,17 +528,6 @@ void evkResizeWindow(ivec2 res) {
             check_vk_result(err);
         }
     }
-
-	// Create Frame Timestamp Query Pools:
-	for (uint32_t i = 0; i < evk.win.FrameTimestampsCount; i++) {
-		EasyVkFrameTimestamps* ftd = &evk.win.FrameTimestamps[i];		
-		VkQueryPoolCreateInfo info = {};
-		info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-		info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-		info.queryCount = QUERIES_PER_FRAME_MAX;
-		err = vkCreateQueryPool(evk.dev, &info, evk.alloc, &ftd->QueryPool);
-		check_vk_result(err);	
-	}
 }
 void evkCheckError(VkResult err) {
 	check_vk_result(err);
@@ -576,18 +559,6 @@ void evkEndCommandBufferAndSubmit(VkCommandBuffer command_buffer) {
     evkCheckError(err);
     err = vkQueueSubmit(evk.que, 1, &end_info, VK_NULL_HANDLE);
     evkCheckError(err);
-}
-void evkDebugSetObjectName(VkObjectType objectType, uint64_t objectHandle, const char* pObjectName) {
-	// doesn't work :(
-	/*
-	auto vkSetDebugUtilsObjectNameEXT  = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(evk.inst, "vkSetDebugUtilsObjectNameEXT");
-	assert(vkSetDebugUtilsObjectNameEXT  != NULL);
-	VkDebugUtilsObjectNameInfoEXT info = {};
-	info.objectType = objectType;
-	info.objectHandle = objectHandle;
-	info.pObjectName = pObjectName;
-	vkSetDebugUtilsObjectNameEXT(evk.dev, &info);
-	*/
 }
 
 static VkSemaphore image_acquired_semaphore = 0;
@@ -717,155 +688,17 @@ static void destroyFrameSemaphores(EasyVkFrameSemaphores* fsd) {
 static void destroyFrameTimestamps(EasyVkFrameTimestamps* ftd) {
 	vkDestroyQueryPool(evk.dev, ftd->QueryPool, evk.alloc);
 }
-static void destroyAllFramesAndSemaphoresAndTimestamps() {
+static void destroyAllFramesAndSemaphores() {
 	for (uint32_t i = 0; i < evk.win.ImageCount; i++) {
         destroyFrame(&evk.win.Frames[i]);
         destroyFrameSemaphores(&evk.win.FrameSemaphores[i]);
     }
-	for (uint32_t i = 0; i < evk.win.ImageCount; i++)
-		destroyFrameTimestamps(&evk.win.FrameTimestamps[i]);
 	free(evk.win.Frames);
     free(evk.win.FrameSemaphores);
-	free(evk.win.FrameTimestamps);
     evk.win.Frames = NULL;
     evk.win.FrameSemaphores = NULL;
     evk.win.ImageCount = 0;
-	evk.win.FrameTimestampsCount = 0;
 }
-
-#include "imgui/imgui.h"
-
-static void evkTimerGUI(int64_t time_of_prev_frame_start, int64_t time_of_frame_start, int64_t* times, int times_count) {
-	const float ms_per_frame = 1000.0f / 144.0f;
-	int64_t del = time_of_frame_start - time_of_prev_frame_start;
-	float frame_ms = double(del) / 1000000.0 * evk.phys_props.limits.timestampPeriod;
-
-	static bool show_timeline = true;
-
-	// apply hysteresis to frame_ms:
-	// ignore frames that are insanely long or that aren't that much smaller than before
-	static int frame_range_hyst = 0;
-	int frame_range = int(frame_ms / ms_per_frame) + 1;
-	if (frame_range < 16 && frame_range > frame_range_hyst)
-		frame_range_hyst = frame_range;
-	else if (frame_range < (frame_range_hyst - 1))
-		frame_range_hyst = frame_range;
-		
-	const double nanosec_per_count = evk.phys_props.limits.timestampPeriod;
-	const double ms_per_count = nanosec_per_count / 1000000.0;
-	const char* texts[] = { "update", "clear stats", "render", "draw", "swap", "other", "last" };
-	//ImU32 label_cols[ARRSIZE(texts)] = { 0x80404080, 0x80408040, 0x80804040, 0x80408080, 0x80804080, 0x80808040};
-	ImU32 label_cols[ARRSIZE(texts)] = { 0xff404080, 0xff408040, 0xff804040, 0xff408080, 0xff804080, 0xff808040};
-	int label_chars_max = 0;
-	for (int i = 0; i < ARRSIZE(texts); ++i)
-		label_chars_max = max(label_chars_max, (int)strlen(texts[i]));
-	const int label_count = times_count-1;
-	const float pixels_from_ms = 15.0f; 
-	const float bars_x_start = float(label_chars_max + 9) * gui::GetFont()->FallbackAdvanceX;
-
-	gui::SetNextWindowSize(vec2(show_timeline ? 800.0f : bars_x_start + gui::GetStyle().WindowPadding.x, 0.0f));
-	if (gui::Begin("GPU Timers", 0, ImGuiWindowFlags_AlwaysAutoResize)) {
-		if (show_timeline && gui::Button("collapse", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = false;
-		else if (!show_timeline && gui::Button("expand", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = true;
-		if (frame_ms < 0.0) {
-			log("Strange frametime: %6.3f (curr=%lld [0x%x] prev=%lld [0x%x])\n", frame_ms, time_of_frame_start, time_of_frame_start, time_of_prev_frame_start, time_of_prev_frame_start);
-		}
-
-		ImDrawList* dl = gui::GetWindowDrawList();
-		const vec2 cs = gui::GetContentRegionAvail();
-
-		gui::Text("%*s  %6.3f", -label_chars_max, "frame", frame_ms);
-
-		const ImU32 major_grid_col = 0xff888888;
-		const ImU32 minor_grid_col = 0xff444444;
-		const ImU32 frame_grid_col = 0xff444488;
-		const ImU32 bar_col = 0x80eeeeee;
-		// Draw the grid:
-		if (show_timeline) {
-			const vec2 cp = gui::GetCursorScreenPos();
-			// starting line:
-			dl->AddLine(cp + vec2(bars_x_start, 0.0f), cp + vec2(bars_x_start, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), major_grid_col);
-			float ms = 1.0f;
-
-			while (ms < (frame_range_hyst * ms_per_frame)) {
-				float x = bars_x_start + ms * pixels_from_ms;
-				dl->AddLine(cp + vec2(x, 0.0f), cp + vec2(x, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), minor_grid_col);
-				ms += 1.0f;
-			}
-			float x = bars_x_start + ms_per_frame * pixels_from_ms;
-			dl->AddLine(cp + vec2(x, 0.0f), cp + vec2(x, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), frame_grid_col);
-		}
-		
-		const vec2 cp_line = gui::GetCursorScreenPos();
-		for (int i = 0; i < label_count; ++i) {
-			int64_t del = times[i+1] - times[i];
-			float ms = double(del) * nanosec_per_count / 1000000.0;
-
-			const vec2 cp = gui::GetCursorScreenPos();
-			//if (show_timeline)
-				dl->AddRectFilled(cp, cp + vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, gui::GetTextLineHeightWithSpacing()), label_cols[i]);
-			gui::Text("%*s  %6.3f", -label_chars_max, texts[i%ARRSIZE(texts)], ms);
-			if (show_timeline) {
-				/* feels redundant if there is room to draw over label
-				if (gui::GetMousePos().x >= (cp.x + bars_x_start) &&
-					gui::GetMousePos().y >= cp.y && gui::GetMousePos().y < (cp.y + gui::GetTextLineHeightWithSpacing())) {
-					gui::BeginTooltip();
-					gui::Text("%s: %6.3f", texts[i%ARRSIZE(texts)], ms);
-					gui::EndTooltip();
-				}
-				*/
-				const vec2 cp = cp_line;
-				vec2 s = vec2(bars_x_start + double(times[i] - time_of_frame_start) * ms_per_count * pixels_from_ms, 0.0f);
-				vec2 e = vec2(bars_x_start + double(times[i+1] - time_of_frame_start) * ms_per_count * pixels_from_ms, gui::GetTextLineHeightWithSpacing());
-				dl->AddRectFilled(cp + s, cp + e, label_cols[i]);
-				//dl->AddRect(cp + s, cp + e, major_grid_col); // nice to see "something" for all the pieces, but also a huge false impression of "negilible" vs "very small but existent"
-
-				// nice to know the exact number, but without also seeing the label you can't tell what the number belongs to, so still have to look over. tooltip of "label: time" is better (though requires mouse)
-				// actually really nice if we use color, because easy to remember "blue is update" etc.
-				if (ms > 1.0) {
-					TempStr digits = TempStr("%.1f", ms);
-					dl->AddText(cp + vec2((s.x + e.x)*0.5f - gui::GetFont()->FallbackAdvanceX * digits.len * 0.5f, s.y), 0xffffffff, digits.str);
-					//dl->AddText(cp + vec2(e.x, s.y), 0xffffffff, digits.str);
-					//dl->AddText(cp + s - vec2((strlen(texts[i]) * gui::GetFont()->FallbackAdvanceX), 0.0f), 0xffffffff, texts[i%ARRSIZE(texts)]);
-				}
-				
-			}
-		}
-	} gui::End();
-}
-void evkTimeFrameGet() {
-	// Read results from the last frame in the chain (FrameIdx + 1) % count = tail)
-	EasyVkFrameTimestamps* ft_prev = &evk.win.FrameTimestamps[(evk.win.TimestampIndex + 1) % evk.win.FrameTimestampsCount];
-	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[(evk.win.TimestampIndex + 2) % evk.win.FrameTimestampsCount];
-	int64_t times[QUERIES_PER_FRAME_MAX];
-	VkResult res = vkGetQueryPoolResults(evk.dev, ft->QueryPool, 0, ft->QueryCount, sizeof(times), times, sizeof(int64_t), VK_QUERY_RESULT_64_BIT);
-	if (res != VK_SUCCESS) {
-		log("Timestamp: %s\n", errorString(res));
-	}
-	int64_t times_prev[QUERIES_PER_FRAME_MAX];
-	VkResult res_prev = vkGetQueryPoolResults(evk.dev, ft_prev->QueryPool, 0, ft_prev->QueryCount, sizeof(times_prev), times_prev, sizeof(int64_t), VK_QUERY_RESULT_64_BIT);
-	if (res_prev != VK_SUCCESS) {
-		log("Timestamp Prev: %s\n", errorString(res_prev));
-	}
-	evkTimerGUI(times_prev[0], times[0], times+1, ft->QueryCount-1);
-}
-void evkTimeFrameReset() {
-	evk.win.TimestampIndex = (evk.win.TimestampIndex + 1) % evk.win.FrameTimestampsCount;
-	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[evk.win.TimestampIndex];
-	ft->QueryCount = 0;
-	vkCmdResetQueryPool(render_command_buffer, ft->QueryPool, 0, QUERIES_PER_FRAME_MAX); //#OPT does it help to move this to right after you consume the data?
-	evkTimeQuery(); // start of frame
-}
-int evkTimeQuery(VkPipelineStageFlagBits stage) {
-	EasyVkFrameTimestamps* ft = &evk.win.FrameTimestamps[evk.win.TimestampIndex];
-	assert(ft->QueryCount < QUERIES_PER_FRAME_MAX);
-	if (ft->QueryCount >= QUERIES_PER_FRAME_MAX) {
-		return -1;
-	}
-	vkCmdWriteTimestamp(render_command_buffer, stage, ft->QueryPool, ft->QueryCount++);
-	return ft->QueryCount-1;
-}
-
 void evkWaitUntilDeviceIdle() {
 	VkResult err;
 	err = vkDeviceWaitIdle(evk.dev);

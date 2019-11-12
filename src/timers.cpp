@@ -466,7 +466,7 @@ void chashtimer_stop() {
 	ctimer.stop();
 }
 */
-
+/*
 void gtimer_reset() {
 	gpu_timer.reset();
 }
@@ -476,7 +476,7 @@ void gtimer_start(const char* name) {
 void gtimer_stop() {
 	gpu_timer.stop();
 }
-
+*/
 void timerUI(Input& in) {
 	static bool show_timer = false;
 	if (in.key.press[KEY_F1])

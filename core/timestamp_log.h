@@ -4,8 +4,8 @@
 
 enum TimestampType {
 	TIMESTAMP_MARKER,
-	TIMESTAMP_BEGIN,
-	TIMESTAMP_END,
+	TIMESTAMP_START,
+	TIMESTAMP_STOP,
 };
 
 struct TimestampLogEntry {
@@ -13,41 +13,66 @@ struct TimestampLogEntry {
 	TimestampType type;
 };
 
+struct Range {
+	HashedString label;
+	int depth;
+	s64 t_start;
+	s64 t_stop;
+};
+
+struct TimestampReport {
+	Bunch<Range> ranges;
+};
+
 struct TimestampLog {
 	Bunch<TimestampLogEntry> entries;
 
 	void clear();
 	void marker(HashedString hstr);
-	void begin(HashedString hstr);
-	void end();
+	void start(HashedString hstr);
+	void stop();
 
-	void showGui(s64* timestamps, int timestamps_count, double nanosec_per_count);
+	void report(s64 t_frame_start, s64 t_frame_start_next, const s64* timestamps, int timestamps_count, TimestampReport* report);
 };
+
+void timestampReportGui(const TimestampReport* report, double millisec_per_count);
 
 struct CpuTimestampLog {
 	TimestampLog log;
+	TimestampReport report;
 	Bunch<s64> timestamps;
+	s64 t_frame_start = 0;
 
 	void newFrame();
 	void marker(HashedString hstr);
-	void begin(HashedString hstr);
-	void end();
-	void showGui();
+	void start(HashedString hstr);
+	void stop();
 };
 
-#include <vulkan/vulkan.h>
+#include "wrap/evk.h"
+#define QUERIES_PER_FRAME_MAX (4096)
 
 struct GpuTimestampLog {
 	struct Frame {
 		TimestampLog log;
 		VkQueryPool  query_pool;
 		int          query_count;
+		Bunch<s64>   timestamps;
 	};
 	Bunch<Frame> frames;
+	
+	int w = 0; // write (request) index
+	int q = 0; // query index
+	int r = 0; // report index
+	TimestampReport report;
+	bool stale_report;
+	VkCommandBuffer cb;
 
 	void resize(int swapchain_frame_count);
 	void destroy();
 
-	void newFrame();
-	void showGui();
+	void newFrame(VkCommandBuffer cb);
+	void marker(HashedString hstr);
+	void start(HashedString hstr);
+	void stop();
 };

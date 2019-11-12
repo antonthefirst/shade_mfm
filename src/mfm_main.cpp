@@ -695,13 +695,12 @@ void mfmCompute(VkCommandBuffer cb) {
 		ctrl.do_reset = false;
 	}
 
+	gtimer_start("clear stats");
 	mfmClearStats();
+	gtimer_stop();
 
-	evkTimeQuery();
-	if (ctrl.dispatches_per_batch > 0) {;
-		//update_timer.reset();
-		//update_timer.start("batch");
-		//gtimer_start("update");
+	if (ctrl.dispatches_per_batch > 0) {
+		gtimer_start("batch"); // snoop this timer for update speed? or run it's own query? (probably better because profiling costs otherwise)
 
 		for (int i = 0; i < ctrl.dispatches_per_batch; ++i) { 
 			if (ctrl.stop_at_n_dispatches != 0 && ctrl.dispatch_counter == ctrl.stop_at_n_dispatches) break;
@@ -717,21 +716,21 @@ void mfmCompute(VkCommandBuffer cb) {
 			ctrl.dispatch_counter++;
 		}
 
-		//update_timer.stop();
-		//gtimer_stop();
+		gtimer_stop();
 	}
-	evkTimeQuery();
 	
 	//if (want_stats)
 	//	mfmComputeStats(gui_world_res);
 
 	//mfmSiteInfo(gui_world_res);
 	
-	evkTimeQuery();
+	gtimer_start("render");
 	computeStage(cb, STAGE_RENDER, world.size);
-	evkTimeQuery();
+	gtimer_stop();
 
+	gtimer_start("read stats");
 	mfmReadStats();
+	gtimer_stop();
 
 	ctimer_stop();
 }

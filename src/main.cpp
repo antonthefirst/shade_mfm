@@ -157,7 +157,6 @@ int main(int, char**)
 	Input in;
 	imguiInit(appGetWindow());
 
-	bool first_frame = true;
     while (!appShouldClose())
     {
 		inputPoll(appGetWindow(), in);
@@ -166,17 +165,14 @@ int main(int, char**)
 			recUIToggle();
 
 		imguiNewFrame();
-		if (!first_frame)
-			ctimer_stop();
-		//timerUI(in);
-		ctimer_gui();
+
 		ctimer_reset();
-		ctimer_start("frame");
+		ctimer_gui();
+		gtimer_gui();
 
 		//ImGui::ShowDemoWindow();
 		mfmUpdate(&in);
 		guiShader();
-		evkTimeFrameGet();
 
 		ImGui::Render();
 
@@ -185,20 +181,18 @@ int main(int, char**)
 		memcpy(&evk.win.ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
 
 		evkFrameAcquire();
-		evkTimeQuery();
-		evkTimeFrameReset();
+
+		gtimer_reset(evkGetRenderCommandBuffer());
+
 		mfmCompute(evkGetRenderCommandBuffer());
 
 		evkRenderBegin();
 		mfmRender(evkGetRenderCommandBuffer());
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), evkGetRenderCommandBuffer());
-		evkTimeQuery();
+		
 		evkRenderEnd();
 
-		
 		evkFramePresent();
-
-		first_frame = false;
 	}
 	evkWaitUntilReadyToTerm();
 	mfmTerm();

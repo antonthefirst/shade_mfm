@@ -46,12 +46,9 @@ struct EasyVkWindow
 	VkClearValue        ClearValue;
 	uint32_t            FrameIndex;             // Current frame being rendered to (0 <= FrameIndex < FrameInFlightCount)
 	uint32_t            ImageCount;             // Number of simultaneous in-flight frames (returned by vkGetSwapchainImagesKHR, usually derived from min_image_count)
-	uint32_t            FrameTimestampsCount;   // Number of frames of timestamps kept
 	uint32_t            SemaphoreIndex;         // Current set of swapchain wait semaphores we're using (needs to be distinct from per frame data)
-	uint32_t            TimestampIndex;         // Current timestamp query pool we're using (needs to be distinct because it's got a longer history)
 	EasyVkFrame*            Frames;
 	EasyVkFrameSemaphores*  FrameSemaphores;    
-	EasyVkFrameTimestamps*  FrameTimestamps;    // size is FrameTimestampsCount
 
 	EasyVkWindow();
 };
@@ -86,7 +83,6 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface);
 void evkResizeWindow(ivec2 res);
 void evkCheckError(VkResult err);
 EasyVkCheckErrorFunc evkGetCheckErrorFunc();
-//void evkDebugSetObjectName(VkObjectType objectType, uint64_t objectHandle, const char* pObjectName);
 
 void evkResetCommandPool(VkCommandPool command_pool);
 void evkBeginCommandBuffer(VkCommandBuffer command_buffer);
@@ -97,10 +93,6 @@ void evkRenderBegin();
 VkCommandBuffer evkGetRenderCommandBuffer();
 void evkRenderEnd();
 void evkFramePresent();
-
-void evkTimeFrameReset();
-void evkTimeFrameGet();
-int  evkTimeQuery(VkPipelineStageFlagBits stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
 void evkWaitUntilDeviceIdle();
 void evkWaitUntilReadyToTerm();

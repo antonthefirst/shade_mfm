@@ -1,12 +1,17 @@
 #pragma once
 #include "core/basic_types.h"
 #include "core/hashed_string.h"
+#include <vulkan/vulkan.h>
 
 struct Input;
 
-void gtimer_reset();
-void gtimer_start(const char* name);
-void gtimer_stop();
+void ghashtimer_start(HashedString hs);
+void ghashtimer_stop();
+
+void gtimer_reset(VkCommandBuffer cb);
+#define gtimer_start(s) ghashtimer_start(HS(s))
+#define gtimer_stop()   ghashtimer_stop()
+void gtimer_gui();
 
 void timerUI(Input& in);
 
