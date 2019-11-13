@@ -71,7 +71,7 @@ int appInit(AppInit init)
     glfwGetFramebufferSize(gWindow, &w, &h);
     glfwSetFramebufferSizeCallback(gWindow, glfw_resize_callback);
 	evkSelectSurfaceFormatAndPresentMode(surface);
-	evkResizeWindow(ivec2(w,h));
+	evkResizeWindow(ivec2(w,h), mode->refreshRate);
 
 	return 0;
 }

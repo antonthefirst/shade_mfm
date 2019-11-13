@@ -37,6 +37,7 @@ struct EasyVkWindow
 {
 	int                 Width;
 	int                 Height;
+	int					RefreshRate;
 	VkSwapchainKHR      Swapchain;
 	VkSurfaceKHR        Surface;
 	VkSurfaceFormatKHR  SurfaceFormat;
@@ -80,7 +81,7 @@ VkShaderModule evkCreateShaderFromFile(const char* pathfile);
 uint32_t evkMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits);
 int  evkMinImageCount();
 void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface);
-void evkResizeWindow(ivec2 res);
+void evkResizeWindow(ivec2 res, int refresh_rate);
 void evkCheckError(VkResult err);
 EasyVkCheckErrorFunc evkGetCheckErrorFunc();
 

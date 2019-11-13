@@ -342,7 +342,7 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	evk.win.PresentMode = SelectPresentMode(evk.phys_dev, evk.win.Surface, &present_modes[0], ARRSIZE(present_modes));
 	log("PICKED MODE %d\n", evk.win.PresentMode);
 }
-void evkResizeWindow(ivec2 res) {
+void evkResizeWindow(ivec2 res, int refresh_rate) {
     VkResult err;
     VkSwapchainKHR old_swapchain = evk.win.Swapchain;
     err = vkDeviceWaitIdle(evk.dev);
@@ -390,6 +390,7 @@ void evkResizeWindow(ivec2 res) {
             info.imageExtent.width = evk.win.Width = cap.currentExtent.width;
             info.imageExtent.height = evk.win.Height = cap.currentExtent.height;
         }
+		evk.win.RefreshRate = refresh_rate;
         err = vkCreateSwapchainKHR(evk.dev, &info, evk.alloc, &evk.win.Swapchain);
         check_vk_result(err);
         err = vkGetSwapchainImagesKHR(evk.dev, evk.win.Swapchain, &evk.win.ImageCount, NULL);

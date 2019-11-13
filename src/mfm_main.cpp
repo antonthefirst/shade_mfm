@@ -735,9 +735,11 @@ void mfmCompute(VkCommandBuffer cb) {
 	ctimer_stop();
 }
 void mfmRender(VkCommandBuffer cb) {
-	ctimer_start("render");
+	ctimer_start("draw");
+	gtimer_start("draw");
 	RenderVis vis;
 	vis.event_window_amt = event_window_vis;
 	renderDraw(cb, world.size, camera_from_world, vis);
+	gtimer_stop();
 	ctimer_stop();
 }

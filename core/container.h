@@ -93,6 +93,10 @@ struct Bunch {
 			maxcount = size;
 		}
 	}
+	void clear_and_reserve(int64_t size) {
+		clear();
+		reserve(size);
+	}
 	void setgarbage(int64_t size) {
 		reserve(size);
 		count = size;
@@ -149,6 +153,7 @@ struct Bunch {
 		CHECK_BOUNDS(count, maxcount);
 		assert(count-i >= 0);
 		memmove(ptr+i+1, ptr+i, (count-i)*sizeof(T));
+		new(ptr + i) T;
 		ptr[i] = val;
 		count++;
 	}

@@ -1,10 +1,15 @@
 #pragma once
 #include "core/basic_types.h"
+#include <string.h> // for strcmp #TODO remove this..
 
 struct HashedString {
 	u32 hash;
 	const char* str;
 };
+
+inline bool HashedStringEq(HashedString a, HashedString b) {
+	return (a.hash == b.hash) && (strcmp(a.str, b.str) == 0);
+}
 
 template <int N>
 constexpr unsigned int djb2StringHash(const char* str) {
