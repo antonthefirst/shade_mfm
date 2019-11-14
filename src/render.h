@@ -6,7 +6,7 @@ struct RenderVis {
 	float event_window_amt = 0.0f;
 };
 
-void renderRecreatePipelineIfNeeded();
+bool renderRecreatePipelineIfNeeded();
 VkDescriptorSet renderGetDescriptorSet();
 VkSampler       renderGetSampler();
 void renderDestroy();

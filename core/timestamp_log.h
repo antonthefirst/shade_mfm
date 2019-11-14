@@ -44,11 +44,12 @@ struct TimestampLog {
 	void report(s64 t_frame_start, s64 t_frame_start_next, const s64* timestamps, int timestamps_count, TimestampReport* report);
 };
 
-void timestampReportGui(const char* id, const TimestampReport* report, float ms_per_frame, double millisec_per_count);
+void timestampReportGui(const char* id, const TimestampReport* report, bool* show_timeline, float ms_per_frame, double millisec_per_count);
 
 struct CpuTimestampLog {
 	TimestampLog log;
 	TimestampReport report;
+	bool show_timeline = false;
 	Bunch<s64> timestamps;
 	s64 t_frame_start = 0;
 
@@ -74,6 +75,7 @@ struct GpuTimestampLog {
 	int q = 0; // query index
 	int r = 0; // report index
 	TimestampReport report;
+	bool show_timeline = false;
 	bool stale_report;
 	VkCommandBuffer cb;
 

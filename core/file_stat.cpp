@@ -18,6 +18,14 @@ int fileStat(const char* filename, FileStats* stats) {
 #endif
 	return res;
 }
+#ifdef _WIN64
+#include <Windows.h>
+void fileDelete(const char* filename) {
+	DeleteFile(filename);
+}
+#else
+#error "Need a DeleteFile equivalent"
+#endif
 
 char* fileReadBinaryIntoMem(const char* pathfile, size_t* bytesize_out) {
 	size_t bytesize = 0;
@@ -50,4 +58,14 @@ char* fileReadCStringIntoMem(const char* pathfile, size_t* bytesize_out) {
 	}
 	if (bytesize_out) *bytesize_out = bytesize;
 	return mem;
+}
+bool fileWriteBinary(const char* pathfile, char* bytes, size_t bytesize) {
+	FILE* f = fopen(pathfile, "wb");
+	if (f) {
+		fwrite(bytes, bytesize, 1, f);
+		fclose(f);
+		return true;
+	} else {
+		return false;
+	}
 }

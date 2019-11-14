@@ -26,4 +26,5 @@ int appInit(AppInit init);
 GLFWwindow* appGetWindow();
 bool appShouldClose();
 void appSwapBuffers();
+void appWaitForEvents();
 void appTerm();

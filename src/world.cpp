@@ -24,8 +24,8 @@ void World::destroy() {
 
 	size = ivec2(0,0);
 }
-bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDescriptorSet draw_descriptor_set, VkSampler draw_sampler) {
-	if (size == new_size) return true;
+bool World::resize(ivec2 new_size) {
+	if (size == new_size) return false;
 
 	VkResult err;
 
@@ -41,17 +41,46 @@ bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDesc
 	evkResetCommandPool(command_pool);
 	evkBeginCommandBuffer(command_buffer);
 
-	if (  !site_bits.resize(new_size, command_buffer)) { destroy(); return false; }
-	if (      !color.resize(new_size, command_buffer)) { destroy(); return false; }
-	if (!event_count.resize(new_size, command_buffer)) { destroy(); return false; }
-	if (        !dev.resize(new_size, command_buffer)) { destroy(); return false; }
+	if (  !site_bits.resize(new_size, command_buffer)) { destroy(); return true; }
+	if (      !color.resize(new_size, command_buffer)) { destroy(); return true; }
+	if (!event_count.resize(new_size, command_buffer)) { destroy(); return true; }
+	if (        !dev.resize(new_size, command_buffer)) { destroy(); return true; }
 
-	if ( !prng_state.resize(paddedSize(new_size), command_buffer)) { destroy(); return false; }
-	if (       !vote.resize(paddedSize(new_size), command_buffer)) { destroy(); return false; }
+	if ( !prng_state.resize(paddedSize(new_size), command_buffer)) { destroy(); return true; }
+	if (       !vote.resize(paddedSize(new_size), command_buffer)) { destroy(); return true; }
 
 	evkEndCommandBufferAndSubmit(command_buffer);
 
 	size = new_size;
+
+	//#TODO this is copied in update descriptor sets below, centralize.
+	VkImageView* draw_views[] = { &color_draw_view, &dev_draw_view };
+	// Create render view:
+	{
+		VkImage images[] = { color.image, dev.image };
+		VkFormat formats[] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32G32B32A32_UINT };
+		for (int i = 0; i < ARRSIZE(draw_views); ++i) {
+			VkImageViewCreateInfo info = {};
+			info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			info.image = images[i];
+			info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			info.format = formats[i];
+			info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			info.subresourceRange.levelCount = 1;
+			info.subresourceRange.layerCount = 1;
+			err = vkCreateImageView(evk.dev, &info, evk.alloc, draw_views[i]);
+			evkCheckError(err);
+			if (err) { destroy(); return true; }
+		}
+	}
+
+	// Wait until images are finished initializing before using them.
+	// #OPT is this really needed?
+	evkWaitUntilDeviceIdle();
+
+	return true;
+}
+void World::updateDescriptorSets(VkDescriptorSet update_descriptor_set, VkDescriptorSet draw_descriptor_set, VkSampler draw_sampler) {
 
 	// Update compute descriptor set:
 	{
@@ -71,41 +100,10 @@ bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDesc
 		vkUpdateDescriptorSets(evk.dev, ARRSIZE(views), write_desc, 0, NULL);
 	}
 
+	//#TODO this is copied in resize above, centralize.
 	VkImageView* draw_views[] = { &color_draw_view, &dev_draw_view };
-	// Create render view:
-	{
-		
-		VkImage images[] = { color.image, dev.image };
-		VkFormat formats[] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32G32B32A32_UINT };
-		for (int i = 0; i < ARRSIZE(draw_views); ++i) {
-			VkImageViewCreateInfo info = {};
-			info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			info.image = images[i];
-			info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			info.format = formats[i];
-			info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			info.subresourceRange.levelCount = 1;
-			info.subresourceRange.layerCount = 1;
-			err = vkCreateImageView(evk.dev, &info, evk.alloc, draw_views[i]);
-			evkCheckError(err);
-			if (err) { destroy(); return false; }
-		}
-	}
 	// Update render descriptor set:
 	{
-		/*
-		VkDescriptorImageInfo desc_image[1] = {};
-		desc_image[0].sampler = draw_sampler;
-		desc_image[0].imageView = color_draw_view;
-		desc_image[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-		VkWriteDescriptorSet write_desc[1] = {};
-		write_desc[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write_desc[0].dstSet = draw_descriptor_set;
-		write_desc[0].descriptorCount = 1;
-		write_desc[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		write_desc[0].pImageInfo = desc_image;
-		vkUpdateDescriptorSets(evk.dev, 1, write_desc, 0, NULL);
-		*/
 		VkWriteDescriptorSet write_desc[ARRSIZE(draw_views)] = { };
 		VkDescriptorImageInfo desc_image[ARRSIZE(draw_views)][1] = { };
 		for (int i = 0; i < ARRSIZE(draw_views); ++i) {
@@ -121,11 +119,6 @@ bool World::resize(ivec2 new_size, VkDescriptorSet update_descriptor_set, VkDesc
 		}
 		vkUpdateDescriptorSets(evk.dev, ARRSIZE(draw_views), write_desc, 0, NULL);
 	}
-
-	// Wait until images are finished initializing before using them.
-	evkWaitUntilDeviceIdle();
-
-	return true;
 }
 ivec2 World::voteMapSize() const {
 	return paddedSize(size);

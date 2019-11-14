@@ -4,7 +4,7 @@
 #include "core/file_stat.h"
 #include <stdio.h>
 #include <string.h> // for memcpy and memset
-
+#include "core/shader_loader.h"
 #include "shaders/draw_shared.inl"
 
 namespace {
@@ -145,14 +145,22 @@ static void setupRenderState(VkCommandBuffer command_buffer, FrameRenderBuffers*
     }
 }
 
-void renderRecreatePipelineIfNeeded() {
-	// if shaders changed
-	if (g_Pipeline) return;
+bool renderRecreatePipelineIfNeeded() {
+	bool changed;
+
+	VkShaderModule vert_module = shaderGet("shaders/draw.vert", &changed);
+	VkShaderModule frag_module = shaderGet("shaders/draw.frag", &changed);
+	if (vert_module == VK_NULL_HANDLE || frag_module == VK_NULL_HANDLE) return false; // invalid shader
+	if (changed) {
+		evkWaitUntilDeviceIdle();
+		renderDestroy();
+	}
+
+	if (g_Pipeline) return false;
 
     VkResult err;
-    VkShaderModule vert_module;
-    VkShaderModule frag_module;
 
+	/*
     // Create The Shader Modules:
     {
         VkShaderModuleCreateInfo vert_info = {};
@@ -168,6 +176,7 @@ void renderRecreatePipelineIfNeeded() {
         evkCheckError(err);
 		free((void*)frag_info.pCode);
     }
+	*/
 
 	
     if (!g_Sampler)
@@ -327,8 +336,10 @@ void renderRecreatePipelineIfNeeded() {
     err = vkCreateGraphicsPipelines(evk.dev, evk.pipe_cache, 1, &info, evk.alloc, &g_Pipeline);
     evkCheckError(err);
 
-    vkDestroyShaderModule(evk.dev, vert_module, evk.alloc);
-    vkDestroyShaderModule(evk.dev, frag_module, evk.alloc);
+    //vkDestroyShaderModule(evk.dev, vert_module, evk.alloc);
+    //vkDestroyShaderModule(evk.dev, frag_module, evk.alloc);
+
+	return true;
 }
 VkDescriptorSet renderGetDescriptorSet() {
 	return g_DescriptorSet;
@@ -344,6 +355,7 @@ void renderDestroy() {
     if (g_Pipeline)             { vkDestroyPipeline(evk.dev, g_Pipeline, evk.alloc); g_Pipeline = VK_NULL_HANDLE; }
 }
 void renderDraw(VkCommandBuffer command_buffer, ivec2 world_size, pose camera_from_world, RenderVis vis) {
+	if (!command_buffer || !g_Pipeline) return;
     // Allocate array to store enough vertex/index buffers
     WindowRenderBuffers* wrb = &g_MainWindowRenderBuffers;
     if (wrb->Frames == NULL)

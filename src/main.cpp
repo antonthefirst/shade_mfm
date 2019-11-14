@@ -160,43 +160,52 @@ int main(int, char**)
     while (!appShouldClose())
     {
 		inputPoll(appGetWindow(), in);
+		if (evkCheckForSwapchainChanges()) {
+			ImGui_ImplVulkan_SetMinImageCount(evkMinImageCount());
+		}
+		if (!evkWindowIsMinimized()) {
+			if (in.key.press[KEY_F2])
+				recUIToggle();
 
-		if (in.key.press[KEY_F2])
-			recUIToggle();
+			imguiNewFrame();
 
-		imguiNewFrame();
+			ctimer_reset();
+			ctimer_gui();
+			gtimer_gui();
 
-		ctimer_reset();
-		ctimer_gui();
-		gtimer_gui();
+			//ImGui::ShowDemoWindow();
+			mfmUpdate(&in);
+			guiShader();
 
-		//ImGui::ShowDemoWindow();
-		mfmUpdate(&in);
-		guiShader();
+			ImGui::Render();
 
-		ImGui::Render();
+			//21/255.f, 33/255.f, 54/255.f
+			ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+			memcpy(&evk.win.ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
 
-		//21/255.f, 33/255.f, 54/255.f
-		ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-		memcpy(&evk.win.ClearValue.color.float32[0], &clear_color, 4 * sizeof(float));
+			if (evkFrameAcquire()) {
 
-		evkFrameAcquire();
+				gtimer_reset(evkGetRenderCommandBuffer());
 
-		gtimer_reset(evkGetRenderCommandBuffer());
+				mfmCompute(evkGetRenderCommandBuffer());
 
-		mfmCompute(evkGetRenderCommandBuffer());
-
-		evkRenderBegin();
-		mfmRender(evkGetRenderCommandBuffer());
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), evkGetRenderCommandBuffer());
+				evkRenderBegin();
+				mfmRender(evkGetRenderCommandBuffer());
+				ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), evkGetRenderCommandBuffer());
 		
-		evkRenderEnd();
+				evkRenderEnd();
 
-		evkFramePresent();
+				evkFramePresent();
+			}
+		} else {
+			appWaitForEvents();
+		}
 	}
 	evkWaitUntilReadyToTerm();
 	mfmTerm();
 	imguiTerm();
+	shadersDestroy();
+	gtimer_term();
 	appTerm();
 
     return 0;

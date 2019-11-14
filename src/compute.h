@@ -6,7 +6,7 @@ struct ComputeArgs {
 	ivec2 site_info_idx = ivec2(-1);
 };
 
-void computeRecreatePipelineIfNeeded();
+bool computeRecreatePipelineIfNeeded();
 VkDescriptorSet computeGetDescriptorSet();
 void computeDestroy();
 void computeBegin(VkCommandBuffer command_buffer, ComputeArgs args);

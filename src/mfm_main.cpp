@@ -321,9 +321,7 @@ static void guiControl(bool* reset, bool* run, bool* step, ivec2* size_request, 
 		gui::PopButtonRepeat();
 
 	
-	/* #PORT
-	gui::AlignFirstTextHeightToWidgets();
-	*/
+	gui::AlignTextToFramePadding();
 	gui::Text("Speed:"); gui::SameLine();
 	gui::SetCursorPosX(55);
 	gui::RadioButton("1  ",   &gui_set.run_speed, 1); gui::SameLine();
@@ -440,19 +438,37 @@ void mfmTerm() {
 	renderDestroy();
 }
 
+bool mfmComputeAndRenderPipelinesOk() {
+	return computeGetDescriptorSet() && renderGetDescriptorSet() && renderGetSampler();
+}
 void mfmUpdate(Input* main_in) {
 	ctimer_start("update");
-	computeRecreatePipelineIfNeeded();
-	renderRecreatePipelineIfNeeded();
+
+	ctrl.do_reset = false;
+
+	/* Check for Splat code changes and compile them */
+	ctimer_start("splat");
+	bool file_change = false;
+	bool project_change = false;
+	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
+	ctrl.do_reset |= project_change;
+	if (!dont_reset_when_code_changes)
+		ctrl.do_reset |= file_change;
+	ctimer_stop();
+
+	/* Rebuild pipelines if first frame, or if shaders change */
+	bool pipelines_rebuilt = false;
+	pipelines_rebuilt |= computeRecreatePipelineIfNeeded();
+	pipelines_rebuilt |= renderRecreatePipelineIfNeeded();
 
 	ctimer_start("controls");
 	ivec2 screen_res = ivec2(evk.win.Width, evk.win.Height);
 	
-	ctrl.do_reset = false;
+	
 	bool do_step = false;
 
 	bool mouse_is_onscreen = main_in->mouse.x >= 0 && main_in->mouse.x <= 1.0f && main_in->mouse.y >= 0 && main_in->mouse.y <= 1.0f; 
-	bool mouse_is_using_ui = /* #PORT gui::IsMouseHoveringAnyWindow() || */ gui::IsAnyItemActive();
+	bool mouse_is_using_ui = gui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || gui::IsAnyItemActive();
 	float camera_aspect = float(evk.win.Width) / float(evk.win.Height);
 	vec2 camera_from_mouse = (vec2(main_in->mouse.x, main_in->mouse.y)*2.0f - vec2(1.f)) * vec2(camera_aspect, 1.f);
 	vec2 world_from_mouse = ~camera_from_world * camera_from_mouse;
@@ -583,17 +599,15 @@ void mfmUpdate(Input* main_in) {
 		gui::Text("Time:               %3.1f sec", sim_time_since_reset);
 	} gui::End(); 
 
-	ivec2 prev_world_size = world.size;
-	world.resize(gui_world_res, computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
-	bool world_has_changed = world.size != prev_world_size;
+	bool world_has_changed = false;
+	if (mfmComputeAndRenderPipelinesOk()) {
+		ivec2 prev_world_size = world.size;
+		bool resized = world.resize(gui_world_res);
+		if (resized || pipelines_rebuilt)
+			world.updateDescriptorSets(computeGetDescriptorSet(), renderGetDescriptorSet(), renderGetSampler());
+		world_has_changed |= world.size != prev_world_size;
+	}
 	initStatsIfNeeded();
-	bool file_change = false;
-	bool project_change = false;
-	
-	checkForSplatProgramChanges(&file_change, &project_change, &prog_info);
-	ctrl.do_reset |= project_change;
-	if (!dont_reset_when_code_changes)
-		ctrl.do_reset |= file_change;
 
 	if (world_has_changed) { 
 		camera_from_world = camera_from_world_start = camera_from_world_target = calcOverviewPose(gui_world_res);
@@ -604,8 +618,6 @@ void mfmUpdate(Input* main_in) {
 
 	/* GL UPDATE WAS HERE */
 
-	useProgram("shaders/staged_update_direct.comp", &prog_stats);
-	useProgram("shaders/draw.vert", "shaders/draw.frag");
 	if (site_info.event_ocurred_signal != 0) {
 		log("Break!\n");
 		run = false;
@@ -620,9 +632,7 @@ void mfmUpdate(Input* main_in) {
 
 	want_stats = false;
 	if (gui::Begin("Statistics")) {
-		/* #PORT
-		gui::AlignFirstTextHeightToWidgets();
-		*/
+		gui::AlignTextToFramePadding();
 		gui::Text("Atom Counts:");
 		gui::SameLine();
 		gui::Checkbox("(show zero counts)", &show_zero_counts);
@@ -679,6 +689,8 @@ void mfmUpdate(Input* main_in) {
 }
 
 void mfmCompute(VkCommandBuffer cb) {
+	if (!mfmComputeAndRenderPipelinesOk()) return;
+
 	ctimer_start("compute"); 
 	
 	ComputeArgs args;
@@ -735,6 +747,8 @@ void mfmCompute(VkCommandBuffer cb) {
 	ctimer_stop();
 }
 void mfmRender(VkCommandBuffer cb) {
+	if (!mfmComputeAndRenderPipelinesOk()) return;
+
 	ctimer_start("draw");
 	gtimer_start("draw");
 	RenderVis vis;

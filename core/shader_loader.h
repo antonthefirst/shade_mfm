@@ -1,10 +1,10 @@
 #pragma once
 
 #include <stddef.h>     /* For size_t */
+#include <vulkan/vulkan.h>
 
-#ifdef _WIN32
-//#define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
-#endif
+// should work on Win/Linux now since we are using the same compiler
+#define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
 
 struct ProgramStats {
 	float time_to_compile = 0.f; // time in seconds it took to compile all shaders
@@ -14,7 +14,10 @@ struct ProgramStats {
 	int program_handle = 0;
 };
 
+void shadersDestroy();
+
 void injectProceduralFile(const char* pathfile, const char* text, size_t text_len);
+VkShaderModule shaderGet(const char* pathfile, bool* changed);
 bool useProgram(const char* vert, const char* frag, ProgramStats* stats = 0);
 bool useProgram(const char* comp, ProgramStats* stats = 0);
 void guiShader(bool* open = 0);

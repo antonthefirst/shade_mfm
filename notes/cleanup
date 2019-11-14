@@ -1,0 +1,2 @@
+GOOGLE_line_directive needs to be added to pass glslang
+TimerHashtable needs to check strings, not just hashes

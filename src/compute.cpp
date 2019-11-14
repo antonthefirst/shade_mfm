@@ -3,6 +3,7 @@
 #include "core/log.h"
 #include "core/file_stat.h"
 #include "shaders/cpu_gpu_shared.inl"
+#include "core/shader_loader.h"
 
 static VkPipelineCreateFlags    g_ComputePipelineCreateFlags = 0x00;
 static VkDescriptorSetLayout    g_ComputeDescriptorSetLayout = VK_NULL_HANDLE;
@@ -12,20 +13,19 @@ static VkPipeline               g_ComputePipeline = VK_NULL_HANDLE;
 
 static ComputeUPC upc;
 
-void computeRecreatePipelineIfNeeded() {
-	if (g_ComputePipeline) return;
+bool computeRecreatePipelineIfNeeded() {
+	bool changed;
+
+	VkShaderModule comp_module = shaderGet("shaders/staged_update_direct.comp", &changed);
+	if (comp_module == VK_NULL_HANDLE) return false; // invalid shader
+	if (changed) {
+		evkWaitUntilDeviceIdle();
+		computeDestroy();
+	}
+
+	if (g_ComputePipeline) return false;
 
     VkResult err;
-    VkShaderModule comp_module;
-    // Create The Shader Module:
-    {
-        VkShaderModuleCreateInfo comp_info = {};
-        comp_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		comp_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/update.comp.spv", &comp_info.codeSize);
-		//comp_info.pCode = (uint32_t*)fileReadBinaryIntoMem("shaders/basic.comp.spv", &comp_info.codeSize);
-        err = vkCreateShaderModule(evk.dev, &comp_info, evk.alloc, &comp_module);
-		free((void*)comp_info.pCode);
-    }
 
 	// Create Descriptor Set Layout
 	{
@@ -76,7 +76,7 @@ void computeRecreatePipelineIfNeeded() {
 		evkCheckError(err);
 	}
 	
-    vkDestroyShaderModule(evk.dev, comp_module, evk.alloc);
+	return true;
 }
 VkDescriptorSet computeGetDescriptorSet() {
 	return g_ComputeDescriptorSet;
@@ -88,6 +88,7 @@ void computeDestroy() {
 }
 
 void computeBegin(VkCommandBuffer command_buffer, ComputeArgs args) {
+	if (!g_ComputePipeline) return;
 	upc.site_info_idx = args.site_info_idx;
 
 	// Bind pipeline
@@ -98,6 +99,7 @@ void computeBegin(VkCommandBuffer command_buffer, ComputeArgs args) {
 	
 }
 void computeStage(VkCommandBuffer command_buffer, int stage, ivec2 size) {
+	if (!g_ComputePipeline) return;
 	ivec2 dispatch = ivec2((size.x / GROUP_SIZE_X) + 1, (size.y / GROUP_SIZE_Y) + 1);
 	upc.stage = stage;
 	vkCmdPushConstants(command_buffer, g_ComputePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputeUPC) , &upc);

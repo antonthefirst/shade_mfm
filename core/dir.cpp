@@ -62,3 +62,12 @@ void dirScan(const char* directory, const char* suffix_or_extension, DirScanFull
 void dirScan(const char* directory, const char* suffix_or_extension, DirScanPathfileCallback callback) {
 	dirScanInternal(directory, suffix_or_extension, NULL, callback, NULL);
 }
+
+#ifdef _WIN64
+#include <Windows.h>
+void dirCreate(const char* directory) {
+	CreateDirectory(directory, NULL);
+}
+#else
+#error "Need a CreateDirectory equivalent (something that makes a directory of a given name, if it doesn't already exist)"
+#endif

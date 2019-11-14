@@ -14,8 +14,7 @@ static bool rebuild_swapchain = false;
 static ivec2 new_swapchain_res = ivec2(0);
 
 static void glfw_resize_callback(GLFWwindow*, int w, int h) {
-    rebuild_swapchain = true;
-	new_swapchain_res = ivec2(w,h);
+	evkNotifyOfWindow(ivec2(w,h));
 }
 
 static void glfw_error_callback(int error, const char* description) {
@@ -80,8 +79,7 @@ GLFWwindow* appGetWindow() {
 	return gWindow;
 }
 
-bool appShouldClose()
-{
+bool appShouldClose() {
 	return (glfwWindowShouldClose(gWindow) != 0) || glfwGetKey(gWindow, GLFW_KEY_ESCAPE);
 }
 
@@ -89,7 +87,9 @@ void appSwapBuffers()
 {
 	glfwSwapBuffers(gWindow);
 }
-
+void appWaitForEvents() {
+	glfwWaitEvents();
+}
 void appTerm()
 {
 	glfwTerminate();

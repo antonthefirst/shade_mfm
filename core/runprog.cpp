@@ -63,7 +63,8 @@ void runProg(const char* command_line, String* output) {
 		BOOL bSuccess = FALSE;
 		while(true)  { 
 			bSuccess = ReadFile(g_hChildStd_OUT_Rd, chBuf, sizeof(chBuf), &dwRead, NULL);
-			output->append(chBuf, dwRead);
+			if (output)
+				output->append(chBuf, dwRead);
 			if(!bSuccess || dwRead == 0 ) break;
 		}
 		CloseHandle(g_hChildStd_OUT_Rd);

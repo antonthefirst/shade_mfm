@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include "core/vec2.h"
 #include "core/basic_types.h"
+#include "core/string_range.h" // for shader compiler output
 
 
 // Helper structure to hold the data needed by one rendering frame
@@ -75,8 +76,11 @@ extern EasyVk evk;
 
 void evkInit(const char** extensions, uint32_t extensions_count);
 void evkTerm();
+void evkNotifyOfWindow(ivec2 new_resolution);
+bool evkCheckForSwapchainChanges();
+bool evkWindowIsMinimized();
 
-VkShaderModule evkCreateShaderFromFile(const char* pathfile);
+VkShaderModule evkCreateShaderFromFile(const char* pathfile, String* output = NULL);
 
 uint32_t evkMemoryType(VkMemoryPropertyFlags properties, uint32_t type_bits);
 int  evkMinImageCount();
@@ -89,7 +93,7 @@ void evkResetCommandPool(VkCommandPool command_pool);
 void evkBeginCommandBuffer(VkCommandBuffer command_buffer);
 void evkEndCommandBufferAndSubmit(VkCommandBuffer command_buffer);
 
-void evkFrameAcquire();
+bool evkFrameAcquire();
 void evkRenderBegin();
 VkCommandBuffer evkGetRenderCommandBuffer();
 void evkRenderEnd();

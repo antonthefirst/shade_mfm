@@ -12,6 +12,7 @@ void gtimer_reset(VkCommandBuffer cb);
 #define gtimer_start(s) ghashtimer_start(HS(s))
 #define gtimer_stop()   ghashtimer_stop()
 void gtimer_gui();
+void gtimer_term();
 
 void timerUI(Input& in);
 

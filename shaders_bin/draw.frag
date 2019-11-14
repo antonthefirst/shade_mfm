@@ -1,6 +1,6 @@
 #version 430 core
 
-#line 1 5
+#line 1 "shaders/defines.inl"
 // mfm constants
 #define EVENT_WINDOW_RADIUS 4
 
@@ -41,7 +41,7 @@
 
 uint XoroshiroNext32();
 
-#line 1 14
+#line 1 "shaders/draw_shared.inl"
 #ifdef _WIN32
 typedef unsigned int uint;
 #endif
@@ -55,7 +55,7 @@ layout(push_constant) uniform UPC {
 	float inv_camera_aspect; float screen_from_grid_scale; float event_window_vis;
 };
 
-#line 1 15
+#line 1 "shaders/hash.inl"
 uint uint_hash(uint x) {
     x = (x ^ 61U) ^ (x >> 16U);
     x *= 9U;
@@ -97,7 +97,7 @@ vec3 unorm3_from(uint b) {
 vec3 color_from_bits(uint v) {
 	return unorm3_from(v);
 }
-#line 1 16
+#line 1 "shaders/maths.inl"
 // keep this small! vague guidelines of what belongs here:
 // * basic commonly used formulas (on par with pow, exp etc)
 // * basic linear algebra ops (on par with matrix mul, cross, dot etc)
@@ -233,7 +233,7 @@ void pose_inverse(inout vec3 pos, inout vec4 rot) {
 	pos = quat_mul(rot, -pos);
 }
  
-#line 1 13
+#line 1 "shaders/draw.frag"
 //include "defines.inl"
 //include "draw_shared.inl"
 //include "hash.inl"

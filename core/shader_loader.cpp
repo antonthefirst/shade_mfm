@@ -5,7 +5,9 @@
 #include "core/maths.h" // for min max
 #include "core/string_range.h"
 #include "core/file_stat.h"
+#include "core/dir.h"
 
+#include "wrap/evk.h"
 #include <GLFW/glfw3.h>
 
 
@@ -50,11 +52,13 @@ namespace {
 	};
 
 	struct ShaderEntry {
-		int file_idx = -1;           // the main text file of this shader
-		int handle = 0;              // compiled shader. 0 if anything went wrong
-		GLenum type = 0;             // the type of shader
-		bool stale = true;           // set true by files if this shader's file or any that it includes has changed. set true by an attempted recompile (successful or not)
-		std::vector<int> prog_idxs;  // the indecies of programs to notify of changes
+		int file_idx = -1;                      // the main text file of this shader
+		VkShaderModule module = VK_NULL_HANDLE; // last successfuly compiled shader
+		GLenum type = 0;                        // the type of shader
+		bool stale_file = true;                 // set true by files if this shader's file or any that it includes has changed.
+		bool stale_module = true;               // set true if an attempted compile failed, and the old shader module remained.
+		bool changed_module = false;            // set true when a new shader module replaces the old one
+		std::vector<int> prog_idxs;             // the indecies of programs to notify of changes
 		String log;
 		String final_text;
 		s64 time_to_compile = 0;
@@ -179,7 +183,7 @@ static void clear(int file_idx) {
 }
 static void alertUsersOfChange(int file_idx) {
 	if (file_entries[file_idx].shader_idx != -1) {
-		shader_entries[file_entries[file_idx].shader_idx].stale = true;
+		shader_entries[file_entries[file_idx].shader_idx].stale_file = true;
 		assert(file_entries[file_idx].user_idxs.size() == 0); // shader main file shouldn't have users
 	}
 	else {
@@ -361,9 +365,10 @@ static void checkAllFilesForUpdates() {
 	for (int i = 0; i < (int)file_entries.size(); ++i)
 		checkForUpdates(i, file_entries[i].path);
 	for (ShaderEntry& s : shader_entries) {
-		if (s.stale) {
+		s.changed_module = false;
+		if (s.stale_file) {
 			//PrintTimer t(file_entries[s.file_idx].name.str);
-			s.stale = false;
+			s.stale_file = false;
 			for (int idx : s.prog_idxs) {
 				prog_entries[idx].try_relink = true;
 				prog_entries[idx].stale = true;
@@ -414,26 +419,12 @@ static void checkAllFilesForUpdates() {
 			}
 			log("Removed %d \\r from %s\n", cr_removed_count, file_entries[s.file_idx].name.str);
 			s.final_text.len = w - s.final_text.str;
-
-			// submit the final shader source to compile
-			/* #PORT
-			GLint final_len = (int)s.final_text.len;
-			glShaderSource(s.handle, 1, &s.final_text.str, (const GLint*)&final_len);
-
-			glCompileShader(s.handle);
-			*/
 			
 			FILE* file = fopen(TempStr("debug_shaders/%s", file_entries[s.file_idx].file.str), "wb");
 			if (file) {
 				fwrite(s.final_text.str, s.final_text.len, 1, file);
 				fclose(file);
 			}
-
-			/*
-			s.final_text.clear();
-			for (int i = 0; i < texts.size(); ++i)
-				s.final_text.append(texts[i], lens[i]);
-			*/
 
 			if (s.source_dump_location) {
 				char*& src = *s.source_dump_location;
@@ -448,27 +439,34 @@ static void checkAllFilesForUpdates() {
 				}
 				src[total_len] = 0;
 			}
+
+			dirCreate("shaders_bin");
+
+			// Write the final text to file, so that the compiler can read it.
+			fileWriteBinary(TempStr("shaders_bin/%s", f.file.str), s.final_text.str, s.final_text.len);
+
+			// Run compiler
+			VkShaderModule module = evkCreateShaderFromFile(TempStr("shaders_bin/%s", f.file.str), &s.log);
+			log("%.*s\n", s.log.len, s.log.str);
 			
-			/* #PORT
-			int params = -1;
-			glGetShaderiv(s.handle, GL_COMPILE_STATUS, &params);
-			if (params != GL_TRUE) {
-				int log_bytes = 0;
-				glGetShaderiv(s.handle, GL_INFO_LOG_LENGTH, &log_bytes);
-				s.log.reservebytes(log_bytes);
-				int log_len = 0;
-				glGetShaderInfoLog(s.handle, s.log.max_bytes, &log_len, s.log.str);
-				s.log.len = log_len;
-				glDeleteShader(s.handle);
-				s.handle = 0;
+			if (s.log.len > 0) { // errors or warnings
+				if (module != VK_NULL_HANDLE)
+					vkDestroyShaderModule(evk.dev, module, evk.alloc);
+				s.stale_module = true;
 				guiSetErroredFile(s.file_idx);
 				any_errors_since_last_check = true;
-			} 
-			*/
+			} else {
+				s.stale_module = false;
+				if (s.module != VK_NULL_HANDLE)
+					vkDestroyShaderModule(evk.dev, s.module, evk.alloc);
+				s.module = module;
+				s.changed_module = true;
+			}
+			
 			s.time_to_compile = time_counter() - t_start; // do this after Get COMPILE_STATUS because that seems to actually block waiting for compiler to finish
-
 		}
 	}
+#if 0 //#PORT delete
 	for (int i = 0; i < (int)prog_entries.size(); ++i) {
 		ProgEntry& p = prog_entries[i];
 		if (p.try_relink) {
@@ -526,6 +524,7 @@ static void checkAllFilesForUpdates() {
 #endif
 		}
 	}
+#endif
 }
 int getShaderEntry(const char* pathfile) {
 	if (!pathfile) return -1;
@@ -582,6 +581,18 @@ static void programStats(ProgramStats* stats, int prog_idx) {
 		stats->comp_log = 0;
 }
 
+VkShaderModule shaderGet(const char* pathfile, bool* changed) {
+	int idx = getShaderEntry(pathfile);
+	checkAllFilesForUpdates();
+	*changed = shader_entries[idx].changed_module;
+	return shader_entries[idx].module;
+}
+void shadersDestroy() {
+	for (int i = 0; i < shader_entries.size(); ++i) {
+		if (shader_entries[i].module != VK_NULL_HANDLE)
+			vkDestroyShaderModule(evk.dev, shader_entries[i].module, evk.alloc);
+	}
+}
 bool useProgram(const char* vert, const char* frag, ProgramStats* stats) {
 	int prog_idx = getProgEntry(vert, frag, NULL);
 	checkAllFilesForUpdates(); // could potentially limit this to just the files "vert" and "frag" care about, but it's probably not worth it right now (if you're changing files, you're probably changing the ones you care about here anyway, and those that aren't changing early out on stat)
@@ -674,7 +685,7 @@ void guiShader(bool* open) {
 
 	bool any_issues = false;
 	for (const ShaderEntry& e : shader_entries)
-		any_issues |= e.handle == 0;
+		any_issues |= e.module == VK_NULL_HANDLE;
 	for (const ProgEntry& e : prog_entries)
 		any_issues |= e.handle == 0;
 
@@ -707,7 +718,7 @@ void guiShader(bool* open) {
 			}
 			else {
 				const ShaderEntry& s = shader_entries[f.shader_idx];
-				if (s.handle == 0) col = col_red;
+				if (s.module == VK_NULL_HANDLE) col = col_red;
 			}
 
 			gui::PushStyleColor(ImGuiCol_Text, vec4(col, 1.f));

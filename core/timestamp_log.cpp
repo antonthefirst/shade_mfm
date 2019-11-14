@@ -239,7 +239,7 @@ static u32 col_from_hash(u32 hash) {
 	return hash | 0xff000000;
 #endif
 }
-void timestampReportGui(const char* id, const TimestampReport* report, float ms_per_frame, double msec_per_count) {
+void timestampReportGui(const char* id, const TimestampReport* report, bool* show_timeline, float ms_per_frame, double msec_per_count) {
 	const Bunch<Range>& ranges = report->ranges;
 	const Bunch<RangeSum>& range_sums = report->range_sums;
 	if (ranges.count == 0) return;
@@ -256,8 +256,6 @@ void timestampReportGui(const char* id, const TimestampReport* report, float ms_
 	*/
 	float frame_ms = (ranges[0].t_stop - ranges[0].t_start) * msec_per_count;
 	s64 time_of_frame_start = ranges[0].t_start;
-
-	static bool show_timeline = true;
 
 	// apply hysteresis to frame_ms:
 	// ignore frames that are insanely long or that aren't that much smaller than before
@@ -276,10 +274,10 @@ void timestampReportGui(const char* id, const TimestampReport* report, float ms_
 	const float pixels_from_ms = 15.0f; 
 	const float bars_x_start = float(label_chars_max + 9) * gui::GetFont()->FallbackAdvanceX;
 
-	gui::SetNextWindowSize(vec2(show_timeline ? 800.0f : bars_x_start + gui::GetStyle().WindowPadding.x, 0.0f));
+	gui::SetNextWindowSize(vec2(*show_timeline ? 800.0f : bars_x_start + gui::GetStyle().WindowPadding.x, 0.0f));
 	if (gui::Begin(id, 0, ImGuiWindowFlags_AlwaysAutoResize)) {
-		if (show_timeline && gui::Button("collapse", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = false;
-		else if (!show_timeline && gui::Button("expand", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) show_timeline = true;
+		if (*show_timeline && gui::Button("collapse", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) *show_timeline = false;
+		else if (!*show_timeline && gui::Button("expand", vec2(bars_x_start - gui::GetFont()->FallbackAdvanceX, 0.f))) *show_timeline = true;
 
 		ImDrawList* dl = gui::GetWindowDrawList();
 		const vec2 cs = gui::GetContentRegionAvail();
@@ -289,7 +287,7 @@ void timestampReportGui(const char* id, const TimestampReport* report, float ms_
 		const ImU32 frame_grid_col = 0xff444488;
 		const ImU32 bar_col = 0x80eeeeee;
 		// Draw the grid:
-		if (show_timeline) {
+		if (*show_timeline) {
 			const vec2 cp = gui::GetCursorScreenPos();
 			// starting line:
 			dl->AddLine(cp + vec2(bars_x_start, 0.0f), cp + vec2(bars_x_start, (label_count-1) * gui::GetTextLineHeightWithSpacing() + gui::GetTextLineHeight()), major_grid_col);
@@ -317,7 +315,7 @@ void timestampReportGui(const char* id, const TimestampReport* report, float ms_
 				hovered_label = range_sums[i].label;
 			}
 		}
-		if (show_timeline) {
+		if (*show_timeline) {
 			for (int i = 0; i < ranges.count; ++i) {
 				float ms = (ranges[i].t_stop - ranges[i].t_start) * msec_per_count;
 				/* feels redundant if there is room to draw over label
@@ -386,7 +384,7 @@ void chashtimer_stop() {
 	ctimer.stop();
 }
 void ctimer_gui() {
-	timestampReportGui("CPU TIMERS", &ctimer.report, 1000.0f / evk.win.RefreshRate, 1000.0 / double(time_frequency())); // ticks per second -> milliseconds per tick
+	timestampReportGui("CPU TIMERS", &ctimer.report, &ctimer.show_timeline, 1000.0f / evk.win.RefreshRate, 1000.0 / double(time_frequency())); // ticks per second -> milliseconds per tick
 }
 
 
@@ -454,16 +452,17 @@ void GpuTimestampLog::newFrame(VkCommandBuffer frame_cb) {
 					//log("Query: success\n");
 				}
 				else {
-					log("Query: not ready\n");
+					//log("Query: not ready\n");
 					frames[q].timestamps.clear(); // undo the resize that was done before query
 				}
 			}
 			else {
 				log("Query: timestamps not shown yet\n");
+				assert(false);
 			}
 		}
 		else {
-			log("Query: nothing to read\n");
+			//log("Query: nothing to read\n");
 		}
 	}
 
@@ -479,7 +478,7 @@ void GpuTimestampLog::newFrame(VkCommandBuffer frame_cb) {
 			//log("Compose: success\n");
 		}
 		else {
-			log("Compose: not enough data (r=%d n=%d)\n", frames[r].timestamps.count, frames[n].timestamps.count);
+			//log("Compose: not enough data (r=%d n=%d)\n", frames[r].timestamps.count, frames[n].timestamps.count);
 			stale_report = true;
 		}
 	}
@@ -533,10 +532,9 @@ void ghashtimer_stop() {
 	gpu_timer.stop();
 }
 void gtimer_gui() {
-	//gui::Begin("GPU TIMERS");
-	//gui::Text("Stale: %d", gpu_timer.stale_report);
-	//gui::Text("Frames: %d", gpu_timer.frames.count);
-	//gui::End();
-	timestampReportGui("GPU TIMERS", &gpu_timer.report, 1000.0f / evk.win.RefreshRate, evk.phys_props.limits.timestampPeriod / 1000000.0);
+	timestampReportGui("GPU TIMERS", &gpu_timer.report, &gpu_timer.show_timeline, 1000.0f / evk.win.RefreshRate, evk.phys_props.limits.timestampPeriod / 1000000.0);
+}
+void gtimer_term() {
+	gpu_timer.destroy();
 }
 

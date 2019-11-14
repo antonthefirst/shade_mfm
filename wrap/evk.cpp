@@ -10,6 +10,9 @@ static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode);
 static void destroyAllFramesAndSemaphores();
 
 EasyVk evk;
+static bool swapchain_changed = false;
+static ivec2 new_swapchain_res = ivec2(0);
+static bool minimized = true;
 
 const char* errorString(VkResult errorCode) {
 	switch (errorCode)
@@ -221,25 +224,59 @@ void evkTerm() {
     vkDestroyInstance(evk.inst, evk.alloc);
 }
 
-VkShaderModule evkCreateShaderFromFile(const char* pathfile) {
+void evkNotifyOfWindow(ivec2 new_resolution) {
+	if (new_resolution.x == 0 && new_resolution.y == 0) {
+		minimized = true;
+	}
+	else {
+		if (new_resolution != ivec2(evk.win.Width, evk.win.Height)) {
+			swapchain_changed = true;
+			new_swapchain_res = new_resolution;
+		} 
+		minimized = false;
+	}
+}
+bool evkCheckForSwapchainChanges() {
+	if (swapchain_changed)  {
+		swapchain_changed = false;
+		evkResizeWindow(new_swapchain_res, evk.win.RefreshRate);
+		evk.win.FrameIndex = 0;
+		return true;
+	} else {
+		return false;
+	}
+}
+bool evkWindowIsMinimized() {
+	return minimized;
+}
+
+
+VkShaderModule evkCreateShaderFromFile(const char* pathfile, String* output) {
 	VkResult err;
-	String output;
 
-	runProg(TempStr("glslc -o %s.spv %s", pathfile, pathfile), &output);
+	// Delete the previous compiled binary, if any. This ensures that if the shader is buggy, we're not left with a stale binary.
+	fileDelete(TempStr("%s.spv", pathfile));
 
+	runProg(TempStr("glslc -o %s.spv %s", pathfile, pathfile), output);
+
+	/* ultimately detect errors from build in lib?
 	if (output.len > 0) {
 		log(output.str);
 		return VK_NULL_HANDLE; //#TODO right now this will bail on warnings too
 	}
-	output.free();
+	*/
+
+	//#TODO what about stale spv? or stale inputs?
 
 	VkShaderModule module = VK_NULL_HANDLE;
     VkShaderModuleCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	info.pCode = (uint32_t*)fileReadBinaryIntoMem(TempStr("%s.spv", pathfile), &info.codeSize);
-    err = vkCreateShaderModule(evk.dev, &info, evk.alloc, &module);
-	check_vk_result(err);
-	free((void*)info.pCode);
+	if (info.pCode) {
+		err = vkCreateShaderModule(evk.dev, &info, evk.alloc, &module);
+		check_vk_result(err);
+		free((void*)info.pCode);
+	}
 
 	return module;
 }
@@ -343,6 +380,8 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	log("PICKED MODE %d\n", evk.win.PresentMode);
 }
 void evkResizeWindow(ivec2 res, int refresh_rate) {
+	assert(res.x != 0 && res.y != 0);
+	minimized = false;
     VkResult err;
     VkSwapchainKHR old_swapchain = evk.win.Swapchain;
     err = vkDeviceWaitIdle(evk.dev);
@@ -566,13 +605,18 @@ static VkSemaphore image_acquired_semaphore = 0;
 static VkSemaphore render_complete_semaphore = 0;
 static VkCommandBuffer render_command_buffer = 0;
 
-void evkFrameAcquire() {
+bool evkFrameAcquire() {
     VkResult err;
 
     image_acquired_semaphore  = evk.win.FrameSemaphores[evk.win.SemaphoreIndex].ImageAcquiredSemaphore;
     render_complete_semaphore = evk.win.FrameSemaphores[evk.win.SemaphoreIndex].RenderCompleteSemaphore;
     err = vkAcquireNextImageKHR(evk.dev, evk.win.Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &evk.win.FrameIndex);
-    check_vk_result(err);
+	if (err == VK_ERROR_OUT_OF_DATE_KHR) {
+		evkResizeWindow(ivec2(evk.win.Width, evk.win.Height), evk.win.RefreshRate);
+		return false;
+	} else {
+		check_vk_result(err);
+	}
 
 	EasyVkFrame* fd = &evk.win.Frames[evk.win.FrameIndex];
 
@@ -598,6 +642,7 @@ void evkFrameAcquire() {
     }
 
 	render_command_buffer = fd->CommandBuffer;
+	return true;
 }
 void evkRenderBegin() {
     VkResult err;
@@ -653,8 +698,13 @@ void evkFramePresent() {
     info.pSwapchains = &evk.win.Swapchain;
     info.pImageIndices = &evk.win.FrameIndex;
     VkResult err = vkQueuePresentKHR(evk.que, &info);
-    check_vk_result(err);
-    evk.win.SemaphoreIndex = (evk.win.SemaphoreIndex + 1) % evk.win.ImageCount; // Now we can use the next set of semaphores
+	evk.win.SemaphoreIndex = (evk.win.SemaphoreIndex + 1) % evk.win.ImageCount; // Now we can use the next set of semaphores
+	if (err == VK_ERROR_OUT_OF_DATE_KHR) {
+		evkResizeWindow(ivec2(evk.win.Width, evk.win.Height), evk.win.RefreshRate);
+		return;
+	} else {
+		check_vk_result(err);
+	} 
 }
 
 
