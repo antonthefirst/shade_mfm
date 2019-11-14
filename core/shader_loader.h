@@ -5,6 +5,7 @@
 
 // should work on Win/Linux now since we are using the same compiler
 #define C_STYLE_LINE_DIRECTIVES // #line n "filename" instead of #line n k
+#define DISABLE_LINE_DIRECTIVES // remove all #line directives (for easier debugging of raw generated code)
 
 struct ProgramStats {
 	float time_to_compile = 0.f; // time in seconds it took to compile all shaders

@@ -7,6 +7,7 @@
 /perfshots
 /enc_temp_folder
 /debug_shaders
+/shaders_bin
 /*.VC.*
 /*.bin
 gl_info.txt

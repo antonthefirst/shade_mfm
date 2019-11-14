@@ -243,11 +243,14 @@ static void checkForUpdates(int file_idx, StringRange path) {
 		fseek(f, 0, SEEK_SET);
 	}
 
-
+#ifdef DISABLE_LINE_DIRECTIVES
+	TempStr prepend = TempStr("\n");
+#else
 #ifdef C_STYLE_LINE_DIRECTIVES
 	TempStr prepend = TempStr("\n#line 1 \"%s\"\n", file_entries[file_idx].name.str);
 #else
 	TempStr prepend = TempStr("\n#line 1 %d\n", file_idx);
+#endif
 #endif
 	file_entries[file_idx].text = (char*)malloc(prepend.len + text_len + 1);
 	memcpy(file_entries[file_idx].text, prepend.str, prepend.len);
@@ -446,9 +449,10 @@ static void checkAllFilesForUpdates() {
 			fileWriteBinary(TempStr("shaders_bin/%s", f.file.str), s.final_text.str, s.final_text.len);
 
 			// Run compiler
+			log("Compiling...\n");
 			VkShaderModule module = evkCreateShaderFromFile(TempStr("shaders_bin/%s", f.file.str), &s.log);
 			log("%.*s\n", s.log.len, s.log.str);
-			
+			log("Done.\n");
 			if (s.log.len > 0) { // errors or warnings
 				if (module != VK_NULL_HANDLE)
 					vkDestroyShaderModule(evk.dev, module, evk.alloc);

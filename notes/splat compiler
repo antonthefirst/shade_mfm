@@ -1,0 +1,4 @@
+gotchas:
+- putting "return" in statements feels weird. easy to leave off if porting an expression. error is totally cryptic:
+shaders_bin/staged_update_direct.comp:2694: error: '' :  syntax error, unexpected IDENTIFIER
+and extra cryptic if with line directives for some reason

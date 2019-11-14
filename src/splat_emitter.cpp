@@ -125,10 +125,14 @@ void emitDirectiveLine(Emitter* emi, Token tok) {
 #ifdef C_STYLE_LINE_DIRECTIVES
 	StringRange file_name = emi->file_names[file_idx];
 	emitLine(emi, "/* Injected from file %.*s line %d */", file_name.len, file_name.str, tok.line_num);
+#ifndef DISABLE_LINE_DIRECTIVES
 	emitLine(emi, "#line %d \"%.*s\"", tok.line_num+1, file_name.len, file_name.str);
+#endif
 #else
 	emitLine(emi, "/* Injected from file %d line %d */", file_idx, tok.line_num);
+#ifndef DISABLE_LINE_DIRECTIVES
 	emitLine(emi, "#line %d %d", tok.line_num+1, file_idx);
+#endif
 #endif
 }
 void emitBlock(Emitter* emi, Node* who) {
@@ -254,7 +258,7 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 	for (int s = 0; s < slot_count; ++s) {
 		int k = keycode_from_slot[s];
 		if (emi->vote[k].block || emi->vote[k].expression) {
-			emitLine(emi, RULENAME_FORMAT VOTE_KEYCODE_FORMAT "_inject() {", RULENAME_FORMAT_ARGS, k);
+			emitLine(emi, "int " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "_inject(in SiteNum _cursn) {", RULENAME_FORMAT_ARGS, k);
 			if (emi->vote[k].block)
 				emitBlock(emi, emi->vote[k].block);
 			else
@@ -267,9 +271,9 @@ static void emitRule(Emitter* emi, Node* who, Errors* err) {
 		emitIndent(emi);
 		if (emi->vote[k].block) {
 			if (emi->vote[k].isa.len)
-				emitLine(emi, "int myvotes = is(ew(_cursn), %.*s) ? " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject() : 0;", emi->vote[k].isa.len, emi->vote[k].isa.str, RULENAME_FORMAT_ARGS, k);
+				emitLine(emi, "int myvotes = is(ew(_cursn), %.*s) ? " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "_inject(_cursn) : 0;", emi->vote[k].isa.len, emi->vote[k].isa.str, RULENAME_FORMAT_ARGS, k);
 			else
-				emitLine(emi, "int myvotes = " RULENAME_FORMAT GIVEN_KEYCODE_FORMAT "_inject();", RULENAME_FORMAT_ARGS, k);
+				emitLine(emi, "int myvotes = " RULENAME_FORMAT VOTE_KEYCODE_FORMAT "_inject(_cursn);", RULENAME_FORMAT_ARGS, k);
 		} else if (emi->vote[k].isa.len) {
 			emitLine(emi, "int myvotes = is(ew(_cursn), %.*s) ? 1 : 0;", emi->vote[k].isa.len, emi->vote[k].isa.str);
 		} else {
