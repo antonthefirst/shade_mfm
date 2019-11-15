@@ -420,7 +420,7 @@ static void checkAllFilesForUpdates() {
 				else
 					cr_removed_count += 1;
 			}
-			log("Removed %d \\r from %s\n", cr_removed_count, file_entries[s.file_idx].name.str);
+			log("[SHADER LOADER] Removed %d \\r from %s\n", cr_removed_count, file_entries[s.file_idx].name.str);
 			s.final_text.len = w - s.final_text.str;
 			
 			FILE* file = fopen(TempStr("debug_shaders/%s", file_entries[s.file_idx].file.str), "wb");
@@ -449,10 +449,7 @@ static void checkAllFilesForUpdates() {
 			fileWriteBinary(TempStr("shaders_bin/%s", f.file.str), s.final_text.str, s.final_text.len);
 
 			// Run compiler
-			log("Compiling...\n");
 			VkShaderModule module = evkCreateShaderFromFile(TempStr("shaders_bin/%s", f.file.str), &s.log);
-			log("%.*s\n", s.log.len, s.log.str);
-			log("Done.\n");
 			if (s.log.len > 0) { // errors or warnings
 				if (module != VK_NULL_HANDLE)
 					vkDestroyShaderModule(evk.dev, module, evk.alloc);

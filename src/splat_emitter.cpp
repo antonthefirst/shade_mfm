@@ -668,6 +668,9 @@ static void elementStart(Emitter* emi_decl, Emitter* emi, Node* who, Errors* err
 		who_kid = who_kid->sib;
 	}
 
+	/* Append element stub for later processing */
+	emi->element_stubs.push({emi->element_name, emi->super_name, NULL, NULL});
+
 	/* Pick offsets, avoiding straddling component boundaries */
 	dataAddInternalAndPickOffsets(emi->data);
 
@@ -822,7 +825,60 @@ static void emitElementDispatches(Emitter* emi, Node* who_first, Errors* err) {
 	emitUnindent(emi);
 	emitLine(emi, "}");
 }
+static void printHeirarchy(ElementStub* who, int depth = 0) {
+	for (int i = 0; i < depth; ++i) log(" ");
+	log("%.*s\n", who->element_name.len, who->element_name.str);
+	if (who->kid) printHeirarchy(who->kid, depth + 1);
+	if (who->sib) printHeirarchy(who->sib, depth);
+}
+static void emitTypeCompare(Emitter* emi, ElementStub* who, bool* first) {
+	if (who->kid) emitTypeCompare(emi, who, first);
+	else {
+		if (!*first) emitText(emi, " || ");
+		*first = false;
+		emitText(emi, "A_t == %.*s", who->element_name.len, who->element_name.str, first);
+	}
+	if (who->sib) emitTypeCompare(emi, who->sib, first);
+}
+static void emitElementTypeChecks(Emitter* emi, Node* who_first, Errors* err) {
+	for (int i = 0; i < emi->element_stubs.count; ++i) {
+		ElementStub* who = &emi->element_stubs[i];
+		// try to find your parent, and add yourself to their kid list
+		for (int p = 0; p < emi->element_stubs.count; ++p) {
+			ElementStub* par = &emi->element_stubs[p];
+			if (par->element_name == who->super_name) {
+				addKid(par, who);
+			}
+		}
+	}
 
+#if 0 // debug print the element heirarchy
+	for (int i = 0; i < emi->element_stubs.count; ++i) {
+		ElementStub* who = &emi->element_stubs[i];
+		if (who->super_name.len == 0) { // print those without parents
+			printHeirarchy(who);
+		}
+	}
+#endif
+	
+	emitLine(emi, "bool is(Atom A, AtomType t) {");
+	emitIndent(emi);
+	emitLine(emi, "AtomType A_t = _UNPACK_TYPE(A);");
+	emitLine(emi, "if (t == Empty) { return A_t == Empty || A_t == Void; }");
+	for (int i = 0; i < emi->element_stubs.count; ++i) {
+		ElementStub* who = &emi->element_stubs[i];
+		if (who->kid) {
+			emitIndentedText(emi, "else if (t == %.*s) {", who->element_name.len, who->element_name.str);
+			emitText(emi, "return ");
+			bool first = true;
+			emitTypeCompare(emi, who->kid, &first);
+			emitText(emi, "; }\n");
+		}
+	}
+	emitLine(emi, "else { return A_t == t; }");
+	emitUnindent(emi);
+	emitLine(emi, "}");
+}
 
 void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, ProgramInfo* info) {
 	emi->code.clear();
@@ -842,6 +898,11 @@ void emitForwardDeclarationsAndTypes(Emitter* emi, Node* who, Errors* err, Progr
 	emitHeader(emi, 1, '+', '+', StringRange("Forward Declarations for Inheritance")); 
 	emitLine(emi, "");
 	emitInheritanceDecls(emi, who->kid, err, info);
+
+	/* Forward decl for 'is' function which must be filled in once the types are all known */
+	emitHeader(emi, 1, '+', '+', StringRange("Forward Declarations for Core Functions")); 
+	emitLine(emi, "");
+	emitLine(emi, "bool is(Atom A, AtomType t);");
 }
 void emitElements(Emitter* emi_decl, Emitter* emi_elem, Node* who, Errors* err, ProgramInfo* info) {
 	emi_elem->code.clear();
@@ -853,4 +914,11 @@ void emitElements(Emitter* emi_decl, Emitter* emi_elem, Node* who, Errors* err, 
 	emitHeader(emi_elem, 1, '+', '+', StringRange("Dispatches"));  
 	emitLine(emi_elem, "\n");
 	emitElementDispatches(emi_elem, who->kid, err);
+
+	/* Is function */
+	emitHeader(emi_elem, 1, '+', '+', StringRange("Core Functions"));  
+	emitLine(emi_elem, "");
+	emitElementTypeChecks(emi_elem, who->kid, err);
+
+	emitHeader(emi_elem, 1, '#', '#', StringRange("Engine"));  
 }

@@ -325,8 +325,18 @@ inline bool isSectionHeaderNode(Node* who) {
 
 Node* makeNode(NodeType, Token);
 void freeNode(Node* who);
-void addKid(Node* par, Node* kid);
 void transformAST(Node* par, Node* who, Errors* err);
+
+template<typename T>
+inline void addSib(T* who, T* sib) {
+	while (who->sib) who = who->sib;
+	who->sib = sib;
+}
+template<typename T>
+inline void addKid(T* par, T* kid) {
+	if (!par->kid) par->kid = kid;
+	else addSib(par->kid, kid);
+}
 
 Node* parseGroups(Parser* par, Lexer* lex, Errors* err);
 
@@ -339,6 +349,13 @@ struct KeycodeBinding {
 	StringRange isa;
 	Node* block;
 	Node* expression;
+};
+
+struct ElementStub {
+	StringRange element_name;
+	StringRange super_name;
+	ElementStub* kid;
+	ElementStub* sib;
 };
 
 struct Emitter {
@@ -361,6 +378,9 @@ struct Emitter {
 	int ruleset_idx = 0;
 	int rule_idx = 0;
 	int indent = 0;
+
+	// cumulative state
+	Bunch<ElementStub> element_stubs;
 
 	int element_uid = 0;
 	String code;

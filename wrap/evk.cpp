@@ -5,6 +5,7 @@
 #include "core/string_range.h" // for compiler output
 #include "core/runprog.h"      // for calling compiler
 #include "core/container.h"    // for surface results
+#include "core/cpu_timer.h"
 
 static int getMinImageCountFromPresentMode(VkPresentModeKHR present_mode);
 static void destroyAllFramesAndSemaphores();
@@ -257,7 +258,16 @@ VkShaderModule evkCreateShaderFromFile(const char* pathfile, String* output) {
 	// Delete the previous compiled binary, if any. This ensures that if the shader is buggy, we're not left with a stale binary.
 	fileDelete(TempStr("%s.spv", pathfile));
 
-	runProg(TempStr("glslc -o %s.spv %s", pathfile, pathfile), output);
+	s64 t_start = time_counter();
+	log("[SHADER COMPILER] Starting...\n");
+	runProg(TempStr("glslc -Os -o %s.spv %s", pathfile, pathfile), output);
+	s64 t_run = time_counter() - t_start;
+	if (output && output->len) {
+		log("--- Output ---\n\n");
+		log("%.*s\n", output->len, output->str);
+		log("--------------\n");
+	}
+	log("[SHADER COMPILER] Done (%.1f sec)\n", time_to_sec(t_run));
 
 	/* ultimately detect errors from build in lib?
 	if (output.len > 0) {
@@ -377,7 +387,6 @@ void evkSelectSurfaceFormatAndPresentMode(VkSurfaceKHR surface) {
 	VkPresentModeKHR present_modes[] = { VK_PRESENT_MODE_FIFO_KHR };
 	#endif
 	evk.win.PresentMode = SelectPresentMode(evk.phys_dev, evk.win.Surface, &present_modes[0], ARRSIZE(present_modes));
-	log("PICKED MODE %d\n", evk.win.PresentMode);
 }
 void evkResizeWindow(ivec2 res, int refresh_rate) {
 	assert(res.x != 0 && res.y != 0);

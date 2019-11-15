@@ -89,15 +89,6 @@ void freeNode(Node* who) {
 	}
 	free(who);
 }
-void addSib(Node* who, Node* sib) {
-	while (who->sib) who = who->sib;
-	who->sib = sib;
-}
-void addKid(Node* par, Node* kid) {
-	if (!par->kid) par->kid = kid;
-	else addSib(par->kid, kid);
-}
-
 DiagramPiece parseDiagramPieceAndClearComponent(Parser* p, DiagramImg* comp_img) {
 	DiagramPiece piece;
 	piece.comp_id = COMP_COUNT_MAX;

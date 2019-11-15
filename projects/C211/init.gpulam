@@ -1,8 +1,10 @@
 void Init(C2D c, S2D s) {
 	Atom S = new(Empty);
 	
-	if (c == s/2)
+	//if (c == s/2)
+	//	S = new(Seed);
+	if (c.x != 0 && c.y != 0)
+	if ((c.x % 64) == 0 && (c.y % 64) == 0)
 		S = new(Seed);
-
 	ew(0, S); 
 }

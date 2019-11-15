@@ -11,7 +11,6 @@
 //include "xoroshiro128starstar.inl"
 
 bool isActiveMem(ivec2 vote_idx);
-void MEGA_RNG();
 
 void main() {
 	if (stage == STAGE_RESET) {
@@ -354,7 +353,4 @@ bool isActiveMem(ivec2 vote_idx) {
 	if (imageLoad(img_vote, vote_idx + ivec2(+0,+8)).x >= center_v) return false;
 #endif
 	return true;
-}
-
-void MEGA_RNG() { 
 }

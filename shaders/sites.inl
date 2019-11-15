@@ -127,12 +127,6 @@ bool ew_isEmpty(SiteNum n) {
 Bool ew_isLegal(C2D c) { return taxilen(c) <= EVENT_WINDOW_RADIUS; }
 Bool ew_isLegal(SiteNum n) { return ew_isLegal(ew_mapSym(n)); }
 
-bool is(Atom A, AtomType t) {
-	AtomType A_t = _UNPACK_TYPE(A);
-	if (t == Empty) return A_t == Empty || A_t == Void;
-	else return A_t == t;
-}
-
 
 // ColorUtils
 ARGB cu_color(Byte red, Byte green, Byte blue) {

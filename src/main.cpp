@@ -149,7 +149,7 @@ int main(int, char**)
 	init.fullscreen = false;
 #endif
 
-	init.title = "evk";
+	init.title = "shade_mfm";
 
 	ret = appInit(init);
 	if (ret) return ret;
